@@ -878,4 +878,480 @@ class SocialController extends Controller
             return response()->json(['success' => true, 'data' => []]);
         }
     }
+
+    // ========================================================================
+    // FRIEND DISCOVERY & SEARCH
+    // ========================================================================
+
+    /**
+     * Discover friends by email or phone contacts
+     * POST /api/social/discover-friends
+     */
+    public function discoverFriends(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'contact_type' => 'required|in:email,phone',
+            'contacts' => 'required|array',
+            'contacts.*' => 'required|string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $userId = auth()->id();
+            $contactType = $request->contact_type;
+            $contacts = $request->contacts;
+
+            $suggestions = [];
+            $field = $contactType === 'email' ? 'email' : 'phone';
+
+            $matchingUsers = DB::table('users')
+                ->whereIn($field, $contacts)
+                ->where('id', '!=', $userId)
+                ->get();
+
+            $existingFriendIds = DB::table('friendships')
+                ->where(function($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('friend_id', $userId);
+                })
+                ->get()
+                ->flatMap(function($f) use ($userId) {
+                    return [$f->user_id, $f->friend_id];
+                })
+                ->filter(function($id) use ($userId) {
+                    return $id != $userId;
+                })
+                ->unique()
+                ->toArray();
+
+            foreach ($matchingUsers as $user) {
+                if (!in_array($user->id, $existingFriendIds)) {
+                    $suggestions[] = [
+                        'user_id' => $user->id,
+                        'name' => $user->name ?? ($user->first_name . ' ' . $user->last_name),
+                        'email' => $user->email,
+                        'profile_picture' => $user->profile_picture ?? $user->avatar ?? null,
+                        'match_source' => $contactType
+                    ];
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Found ' . count($suggestions) . ' friend suggestions',
+                'suggestions' => $suggestions
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to discover friends',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Add user's contacts for discovery
+     * POST /api/social/add-contacts
+     */
+    public function addContactsForDiscovery(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'emails' => 'nullable|array',
+            'emails.*' => 'email',
+            'phones' => 'nullable|array',
+            'phones.*' => 'string'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $userId = auth()->id();
+            $user = DB::table('users')->find($userId);
+
+            if ($user->email) {
+                DB::table('contact_discovery')->updateOrInsert(
+                    [
+                        'user_id' => $userId,
+                        'contact_type' => 'email',
+                        'contact_value_hash' => hash('sha256', strtolower(trim($user->email)))
+                    ],
+                    [
+                        'display_name' => $user->name ?? ($user->first_name . ' ' . $user->last_name),
+                        'discoverable' => true,
+                        'updated_at' => now()
+                    ]
+                );
+            }
+
+            if ($user->phone) {
+                DB::table('contact_discovery')->updateOrInsert(
+                    [
+                        'user_id' => $userId,
+                        'contact_type' => 'phone',
+                        'contact_value_hash' => hash('sha256', preg_replace('/[^0-9]/', '', $user->phone))
+                    ],
+                    [
+                        'display_name' => $user->name ?? ($user->first_name . ' ' . $user->last_name),
+                        'discoverable' => true,
+                        'updated_at' => now()
+                    ]
+                );
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Contacts added for discovery'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to add contacts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Search for users by name or email
+     * GET /api/social/friends/search
+     */
+    public function searchUsers(Request $request)
+    {
+        $query = $request->get('query', '');
+
+        if (strlen($query) < 2) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Search query must be at least 2 characters'
+            ], 400);
+        }
+
+        try {
+            $userId = auth()->id();
+
+            $users = DB::table('users')
+                ->where('id', '!=', $userId)
+                ->where(function($q) use ($query) {
+                    $q->where('name', 'LIKE', "%{$query}%")
+                      ->orWhere('first_name', 'LIKE', "%{$query}%")
+                      ->orWhere('last_name', 'LIKE', "%{$query}%")
+                      ->orWhere('email', 'LIKE', "%{$query}%");
+                })
+                ->limit(20)
+                ->get()
+                ->map(function($user) use ($userId) {
+                    $friendshipStatus = DB::table('friendships')
+                        ->where(function($q) use ($userId, $user) {
+                            $q->where('user_id', $userId)->where('friend_id', $user->id);
+                        })
+                        ->orWhere(function($q) use ($userId, $user) {
+                            $q->where('user_id', $user->id)->where('friend_id', $userId);
+                        })
+                        ->first();
+
+                    return [
+                        'user_id' => $user->id,
+                        'name' => $user->name ?? ($user->first_name . ' ' . $user->last_name),
+                        'email' => $user->email,
+                        'profile_picture' => $user->profile_picture ?? $user->avatar ?? null,
+                        'bio' => $user->bio ?? null,
+                        'friendship_status' => $friendshipStatus ? $friendshipStatus->status : null
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'results' => $users,
+                'count' => $users->count()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Search failed',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get sent friend requests
+     * GET /api/social/friend-request/sent
+     */
+    public function getSentRequests()
+    {
+        try {
+            $userId = auth()->id();
+
+            $sentRequests = DB::table('friendships')
+                ->where('user_id', $userId)
+                ->where('status', 'pending')
+                ->join('users', 'users.id', '=', 'friendships.friend_id')
+                ->select('friendships.*', 'users.name', 'users.first_name', 'users.last_name', 'users.email', 'users.profile_picture', 'users.avatar')
+                ->get()
+                ->map(function($request) {
+                    return [
+                        'connection_id' => $request->id,
+                        'user_id' => $request->friend_id,
+                        'name' => $request->name ?? ($request->first_name . ' ' . $request->last_name),
+                        'email' => $request->email,
+                        'profile_picture' => $request->profile_picture ?? $request->avatar ?? null,
+                        'sent_at' => $request->created_at
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'sent_requests' => $sentRequests
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch sent requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ========================================================================
+    // CONNECTION MANAGEMENT
+    // ========================================================================
+
+    /**
+     * Update friendship connection settings
+     * PUT /api/social/connection/{id}/settings
+     */
+    public function updateConnectionSettings($id, Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'can_view_progression' => 'nullable|boolean',
+            'can_message' => 'nullable|boolean',
+            'share_workouts' => 'nullable|boolean',
+            'share_nutrition' => 'nullable|boolean',
+            'share_achievements' => 'nullable|boolean'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $userId = auth()->id();
+
+            $friendship = DB::table('friendships')
+                ->where('id', $id)
+                ->where(function($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('friend_id', $userId);
+                })
+                ->where('status', 'accepted')
+                ->first();
+
+            if (!$friendship) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Friendship not found or not accepted'
+                ], 404);
+            }
+
+            $updateData = array_filter($request->only([
+                'can_view_progression',
+                'can_message',
+                'share_workouts',
+                'share_nutrition',
+                'share_achievements'
+            ]), function($value) {
+                return !is_null($value);
+            });
+
+            $updateData['updated_at'] = now();
+
+            DB::table('friendships')
+                ->where('id', $id)
+                ->update($updateData);
+
+            $updated = DB::table('friendships')->find($id);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Connection settings updated',
+                'connection' => $updated
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update connection settings',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Block a user
+     * POST /api/social/block-user
+     */
+    public function blockUser(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|integer|exists:users,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $userId = auth()->id();
+            $blockedUserId = $request->user_id;
+
+            if ($userId == $blockedUserId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot block yourself'
+                ], 400);
+            }
+
+            $existingFriendship = DB::table('friendships')
+                ->where(function($q) use ($userId, $blockedUserId) {
+                    $q->where('user_id', $userId)->where('friend_id', $blockedUserId);
+                })
+                ->orWhere(function($q) use ($userId, $blockedUserId) {
+                    $q->where('user_id', $blockedUserId)->where('friend_id', $userId);
+                })
+                ->first();
+
+            if ($existingFriendship) {
+                DB::table('friendships')
+                    ->where('id', $existingFriendship->id)
+                    ->update([
+                        'status' => 'blocked',
+                        'updated_at' => now()
+                    ]);
+            } else {
+                DB::table('friendships')->insert([
+                    'user_id' => $userId,
+                    'friend_id' => $blockedUserId,
+                    'status' => 'blocked',
+                    'created_at' => now(),
+                    'updated_at' => now()
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User blocked successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to block user',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // ========================================================================
+    // ACTIVITY FEED ENHANCEMENTS
+    // ========================================================================
+
+    /**
+     * Get comments for an activity
+     * GET /api/social/activity-feed/{id}/comments
+     */
+    public function getComments($id)
+    {
+        try {
+            $comments = DB::table('social_activity_comments')
+                ->where('activity_id', $id)
+                ->join('users', 'users.id', '=', 'social_activity_comments.user_id')
+                ->select(
+                    'social_activity_comments.id',
+                    'social_activity_comments.user_id',
+                    'social_activity_comments.comment',
+                    'social_activity_comments.created_at',
+                    'users.name',
+                    'users.first_name',
+                    'users.last_name',
+                    'users.profile_picture',
+                    'users.avatar'
+                )
+                ->orderBy('social_activity_comments.created_at', 'asc')
+                ->get()
+                ->map(function($comment) {
+                    return [
+                        'id' => $comment->id,
+                        'user_id' => $comment->user_id,
+                        'user_name' => $comment->name ?? ($comment->first_name . ' ' . $comment->last_name),
+                        'user_avatar' => $comment->profile_picture ?? $comment->avatar ?? null,
+                        'comment' => $comment->comment,
+                        'created_at' => $comment->created_at
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'comments' => $comments,
+                'count' => $comments->count()
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch comments',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Unlike an activity
+     * DELETE /api/social/activity-feed/{id}/like
+     */
+    public function unlikeActivity($id)
+    {
+        try {
+            $userId = auth()->id();
+
+            $deleted = DB::table('social_activity_likes')
+                ->where('activity_id', $id)
+                ->where('user_id', $userId)
+                ->delete();
+
+            if ($deleted) {
+                DB::table('social_activities')
+                    ->where('id', $id)
+                    ->decrement('likes_count');
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Activity unliked successfully'
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Like not found'
+                ], 404);
+            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to unlike activity',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

@@ -692,11 +692,23 @@ Route::group(['namespace' => 'Customer', 'prefix' => 'customer', 'as' => 'custom
             Route::delete('/friends/{userId}', [\App\Http\Controllers\Customer\SocialController::class, 'removeFriend'])->name('removeFriend.api');
             Route::get('/friends/requests', [\App\Http\Controllers\Customer\SocialController::class, 'getFriendRequests'])->name('getFriendRequests.api');
             Route::get('/friends/suggestions', [\App\Http\Controllers\Customer\SocialController::class, 'getFriendSuggestions'])->name('getFriendSuggestions.api');
+            Route::get('/friends/search', [\App\Http\Controllers\Customer\SocialController::class, 'searchUsers'])->name('searchUsers.api');
+            Route::get('/friend-request/sent', [\App\Http\Controllers\Customer\SocialController::class, 'getSentRequests'])->name('getSentRequests.api');
+
+            // Friend Discovery
+            Route::post('/discover-friends', [\App\Http\Controllers\Customer\SocialController::class, 'discoverFriends'])->name('discoverFriends.api');
+            Route::post('/add-contacts', [\App\Http\Controllers\Customer\SocialController::class, 'addContactsForDiscovery'])->name('addContacts.api');
+
+            // Connection Settings
+            Route::put('/connection/{id}/settings', [\App\Http\Controllers\Customer\SocialController::class, 'updateConnectionSettings'])->name('updateConnectionSettings.api');
+            Route::post('/block-user', [\App\Http\Controllers\Customer\SocialController::class, 'blockUser'])->name('blockUser.api');
 
             // Activity Feed
             Route::get('/activity-feed', [\App\Http\Controllers\Customer\SocialController::class, 'getActivityFeed'])->name('getActivityFeed.api');
             Route::post('/activity-feed', [\App\Http\Controllers\Customer\SocialController::class, 'postActivity'])->name('postActivity.api');
             Route::post('/activity-feed/{id}/like', [\App\Http\Controllers\Customer\SocialController::class, 'likeActivity'])->name('likeActivity.api');
+            Route::delete('/activity-feed/{id}/like', [\App\Http\Controllers\Customer\SocialController::class, 'unlikeActivity'])->name('unlikeActivity.api');
+            Route::get('/activity-feed/{id}/comments', [\App\Http\Controllers\Customer\SocialController::class, 'getComments'])->name('getComments.api');
             Route::post('/activity-feed/{id}/comment', [\App\Http\Controllers\Customer\SocialController::class, 'commentActivity'])->name('commentActivity.api');
             Route::delete('/activity-feed/{id}', [\App\Http\Controllers\Customer\SocialController::class, 'deleteActivity'])->name('deleteActivity.api');
 
