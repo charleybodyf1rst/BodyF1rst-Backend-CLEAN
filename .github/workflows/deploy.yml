@@ -1,0 +1,38 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  INSTANCE_ID: i-0d53c3e49e2168c75  # CLEAN EC2 INSTANCE
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Deploy to EC2 via SSM
+      run: |
+        echo "🚀 Deploying BodyF1rst Backend to CLEAN EC2..."
+        
+        COMMAND_ID=$(aws ssm send-command \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --document-name "AWS-RunShellScript" \
+          --parameters commands='["cd /var/www/backend","echo Pulling latest code...","sudo git fetch origin","sudo git reset --hard origin/main","echo Installing dependencies...","sudo composer install --no-dev --optimize-autoloader --no-interaction","echo Running migrations...","sudo php artisan migrate --force","echo Clearing caches...","sudo php artisan config:clear","sudo php artisan cache:clear","sudo php artisan view:clear","sudo php artisan route:clear","echo Caching config...","sudo php artisan config:cache","sudo php artisan route:cache","sudo php artisan view:cache","echo Setting permissions...","sudo chown -R nginx:nginx /var/www/backend","sudo chmod -R 775 storage bootstrap/cache","echo Restarting services...","sudo systemctl restart php-fpm","sudo systemctl restart nginx","echo Deployment Complete!"]' \
+          --query 'Command.CommandId' \
+          --output text)
+        
+        echo "📤 Deployment command sent: $COMMAND_ID"
