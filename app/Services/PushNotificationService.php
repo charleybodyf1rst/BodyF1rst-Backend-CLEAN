@@ -2,58 +2,60 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
+use App\Helpers\Helper;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PushNotificationService
 {
     /**
-     * Send push notification via Firebase Cloud Messaging (FCM)
+     * Send push notification via OneSignal
      *
-     * @param array $deviceTokens
-     * @param array $data
-     * @param array $notification
+     * @param string $title
+     * @param string $message
+     * @param array $userIds Array of user IDs to send notification to
+     * @param string $type Notification type (e.g., 'message', 'appointment', 'workout')
+     * @param int|null $modelId Related model ID
+     * @param array $metadata Additional metadata
      * @return array
      */
-    public function sendFCMNotification(array $deviceTokens, array $data, array $notification = []): array
-    {
+    public function sendOneSignalNotification(
+        string $title,
+        string $message,
+        array $userIds = [],
+        string $type = 'general',
+        $modelId = null,
+        array $metadata = []
+    ): array {
         try {
-            $serverKey = env('FCM_SERVER_KEY');
+            // Use Helper::sendPush() which is already configured with OneSignal
+            $response = Helper::sendPush(
+                $title,
+                $message,
+                null, // user_id (not used in Helper for multiple users)
+                null, // notification_id (optional)
+                $type,
+                $modelId,
+                $userIds // users array for targeting specific users
+            );
 
-            if (!$serverKey) {
-                throw new \Exception('FCM Server Key not configured');
-            }
-
-            $payload = [
-                'registration_ids' => $deviceTokens,
-                'data' => $data,
-                'priority' => 'high',
-            ];
-
-            if (!empty($notification)) {
-                $payload['notification'] = $notification;
-            }
-
-            $response = Http::withHeaders([
-                'Authorization' => 'key=' . $serverKey,
-                'Content-Type' => 'application/json',
-            ])->post('https://fcm.googleapis.com/fcm/send', $payload);
-
-            $result = $response->json();
-
-            Log::info('FCM notification sent', [
-                'success' => $result['success'] ?? 0,
-                'failure' => $result['failure'] ?? 0,
+            Log::info('OneSignal notification sent', [
+                'title' => $title,
+                'type' => $type,
+                'recipients' => count($userIds),
+                'response' => $response
             ]);
 
             return [
                 'success' => true,
-                'response' => $result,
-                'sent_count' => $result['success'] ?? 0,
-                'failed_count' => $result['failure'] ?? 0,
+                'response' => $response,
+                'sent_count' => count($userIds)
             ];
         } catch (\Exception $e) {
-            Log::error('FCM notification failed: ' . $e->getMessage());
+            Log::error('OneSignal notification failed: ' . $e->getMessage(), [
+                'title' => $title,
+                'type' => $type
+            ]);
             return [
                 'success' => false,
                 'error' => $e->getMessage()
@@ -76,28 +78,22 @@ class PushNotificationService
         string $messagePreview,
         int $conversationId
     ): array {
-        $deviceTokens = $this->getDeviceTokens($recipients);
+        $userIds = $this->extractUserIds($recipients);
 
-        if (empty($deviceTokens)) {
-            return ['success' => false, 'error' => 'No device tokens found'];
+        if (empty($userIds)) {
+            return ['success' => false, 'error' => 'No user IDs found'];
         }
 
-        $notification = [
-            'title' => $senderName,
-            'body' => $this->truncateMessage($messagePreview, 100),
-            'sound' => 'default',
-            'badge' => '1',
-            'icon' => 'notification_icon',
-        ];
+        $title = $senderName;
+        $message = $this->truncateMessage($messagePreview, 100);
 
-        $data = [
-            'type' => 'new_message',
-            'conversation_id' => (string)$conversationId,
-            'sender_name' => $senderName,
-            'click_action' => 'OPEN_CONVERSATION',
-        ];
-
-        return $this->sendFCMNotification($deviceTokens, $data, $notification);
+        return $this->sendOneSignalNotification(
+            $title,
+            $message,
+            $userIds,
+            'new_message',
+            $conversationId
+        );
     }
 
     /**
@@ -113,21 +109,20 @@ class PushNotificationService
         string $userName,
         int $conversationId
     ): array {
-        $deviceTokens = $this->getDeviceTokens($recipients);
+        $userIds = $this->extractUserIds($recipients);
 
-        if (empty($deviceTokens)) {
-            return ['success' => false, 'error' => 'No device tokens found'];
+        if (empty($userIds)) {
+            return ['success' => false, 'error' => 'No user IDs found'];
         }
 
-        $data = [
-            'type' => 'typing_indicator',
-            'conversation_id' => (string)$conversationId,
-            'user_name' => $userName,
-            'is_typing' => 'true',
-        ];
-
-        // Silent notification (data only)
-        return $this->sendFCMNotification($deviceTokens, $data);
+        // Silent notification - OneSignal will handle as data-only
+        return $this->sendOneSignalNotification(
+            '',
+            $userName . ' is typing...',
+            $userIds,
+            'typing_indicator',
+            $conversationId
+        );
     }
 
     /**
@@ -143,28 +138,23 @@ class PushNotificationService
         int $messageId,
         string $reason
     ): array {
-        // Get all admin device tokens
-        $adminTokens = $this->getAdminDeviceTokens();
+        // Get all admin user IDs
+        $adminIds = $this->getAdminUserIds();
 
-        if (empty($adminTokens)) {
-            return ['success' => false, 'error' => 'No admin tokens found'];
+        if (empty($adminIds)) {
+            return ['success' => false, 'error' => 'No admin users found'];
         }
 
-        $notification = [
-            'title' => 'Message Flagged: ' . ucfirst($flagType),
-            'body' => 'A message has been flagged for review: ' . $reason,
-            'sound' => 'default',
-            'badge' => '1',
-        ];
+        $title = 'Message Flagged: ' . ucfirst($flagType);
+        $message = 'A message has been flagged for review: ' . $reason;
 
-        $data = [
-            'type' => 'message_flagged',
-            'flag_type' => $flagType,
-            'message_id' => (string)$messageId,
-            'click_action' => 'OPEN_MODERATION_DASHBOARD',
-        ];
-
-        return $this->sendFCMNotification($adminTokens, $data, $notification);
+        return $this->sendOneSignalNotification(
+            $title,
+            $message,
+            $adminIds,
+            'message_flagged',
+            $messageId
+        );
     }
 
     /**
@@ -180,84 +170,47 @@ class PushNotificationService
         int $messageId,
         int $conversationId
     ): array {
-        $deviceTokens = $this->getUserDeviceTokens($userId);
-
-        if (empty($deviceTokens)) {
-            return ['success' => false, 'error' => 'No device tokens found'];
-        }
-
-        $data = [
-            'type' => 'read_receipt',
-            'message_id' => (string)$messageId,
-            'conversation_id' => (string)$conversationId,
-        ];
-
-        // Silent notification
-        return $this->sendFCMNotification($deviceTokens, $data);
+        // Silent notification for read receipts
+        return $this->sendOneSignalNotification(
+            '',
+            'Message read',
+            [$userId],
+            'read_receipt',
+            $messageId
+        );
     }
 
     /**
-     * Get device tokens for recipients
+     * Extract user IDs from recipients array
      *
      * @param array $recipients [['id' => 1, 'type' => 'user'], ...]
      * @return array
      */
-    private function getDeviceTokens(array $recipients): array
+    private function extractUserIds(array $recipients): array
     {
-        $tokens = [];
+        $userIds = [];
 
         foreach ($recipients as $recipient) {
-            $userTokens = $this->getUserDeviceTokens(
-                $recipient['id'],
-                $recipient['type'] ?? 'user'
-            );
-            $tokens = array_merge($tokens, $userTokens);
+            if (isset($recipient['id'])) {
+                $userIds[] = $recipient['id'];
+            }
         }
 
-        return array_unique($tokens);
+        return array_unique($userIds);
     }
 
     /**
-     * Get device tokens for a specific user
-     *
-     * @param int $userId
-     * @param string $userType
-     * @return array
-     */
-    private function getUserDeviceTokens(int $userId, string $userType = 'user'): array
-    {
-        // This would query your device_tokens table
-        // For now, returning empty array as placeholder
-
-        // Example query:
-        // return DB::table('device_tokens')
-        //     ->where('user_id', $userId)
-        //     ->where('user_type', $userType)
-        //     ->where('is_active', true)
-        //     ->pluck('token')
-        //     ->toArray();
-
-        return [];
-    }
-
-    /**
-     * Get all admin device tokens
+     * Get all admin user IDs
      *
      * @return array
      */
-    private function getAdminDeviceTokens(): array
+    private function getAdminUserIds(): array
     {
-        // This would query your device_tokens table for admin users
-        // For now, returning empty array as placeholder
-
-        // Example query:
-        // return DB::table('device_tokens')
-        //     ->where('user_type', 'admin')
-        //     ->where('is_active', true)
-        //     ->pluck('token')
-        //     ->toArray();
-
-        return [];
+        // Query admins table for all admin user IDs
+        return DB::table('admins')
+            ->where('role', 'admin')
+            ->pluck('id')
+            ->toArray();
     }
 
     /**
@@ -274,35 +227,5 @@ class PushNotificationService
         }
 
         return substr($message, 0, $length) . '...';
-    }
-
-    /**
-     * Send push notification via Apple Push Notification Service (APNS)
-     *
-     * @param array $deviceTokens
-     * @param array $payload
-     * @return array
-     */
-    public function sendAPNSNotification(array $deviceTokens, array $payload): array
-    {
-        // Placeholder for APNS implementation
-        // In production, use a proper APNS library or service
-
-        try {
-            // Example using apns-php or similar library
-            // This would require proper APNS configuration
-
-            return [
-                'success' => true,
-                'message' => 'APNS notification sent',
-                'sent_count' => count($deviceTokens)
-            ];
-        } catch (\Exception $e) {
-            Log::error('APNS notification failed: ' . $e->getMessage());
-            return [
-                'success' => false,
-                'error' => $e->getMessage()
-            ];
-        }
     }
 }

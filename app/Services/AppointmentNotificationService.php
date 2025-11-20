@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\Helper;
 use App\Mail\AppointmentConfirmation;
 use App\Mail\AppointmentReminder;
 use App\Mail\AppointmentCancelled;
@@ -12,12 +13,12 @@ use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 /**
- * Service for handling automated email notifications for appointments
+ * Service for handling automated email and push notifications for appointments
  */
 class AppointmentNotificationService
 {
     /**
-     * Send appointment confirmation email
+     * Send appointment confirmation email and push notification
      *
      * @param Appointment $appointment
      * @return bool
@@ -44,18 +45,25 @@ class AppointmentNotificationService
                 'notes' => $appointment->notes
             ];
 
+            // Send email
             Mail::to($client->email)->send(new AppointmentConfirmation($data));
 
-            Log::info("Confirmation email sent for appointment {$appointment->id}");
+            // Send push notification
+            $title = 'Appointment Confirmed';
+            $message = "Your {$appointment->type} session with {$coach->first_name} is scheduled for {$data['appointment_date']} at {$data['appointment_time']}";
+
+            Helper::sendPush($title, $message, null, null, 'appointment_confirmed', $appointment->id, [$client->id]);
+
+            Log::info("Confirmation email and push notification sent for appointment {$appointment->id}");
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to send confirmation email for appointment {$appointment->id}: " . $e->getMessage());
+            Log::error("Failed to send confirmation for appointment {$appointment->id}: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Send appointment reminder email (24 hours before)
+     * Send appointment reminder email and push notification (24 hours before)
      *
      * @param Appointment $appointment
      * @return bool
@@ -86,22 +94,29 @@ class AppointmentNotificationService
                 'notes' => $appointment->notes
             ];
 
+            // Send email
             Mail::to($client->email)->send(new AppointmentReminder($data));
+
+            // Send push notification
+            $title = 'Upcoming Appointment Reminder';
+            $message = "Your {$appointment->type} with {$coach->first_name} is in {$hoursUntil} hours at {$data['appointment_time']}";
+
+            Helper::sendPush($title, $message, null, null, 'appointment_reminder', $appointment->id, [$client->id]);
 
             // Mark that reminder was sent
             $appointment->reminder_sent = true;
             $appointment->save();
 
-            Log::info("Reminder email sent for appointment {$appointment->id}");
+            Log::info("Reminder email and push notification sent for appointment {$appointment->id}");
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to send reminder email for appointment {$appointment->id}: " . $e->getMessage());
+            Log::error("Failed to send reminder for appointment {$appointment->id}: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Send appointment cancellation email
+     * Send appointment cancellation email and push notification
      *
      * @param Appointment $appointment
      * @param string|null $reason
@@ -127,18 +142,28 @@ class AppointmentNotificationService
                 'cancellation_reason' => $reason
             ];
 
+            // Send email
             Mail::to($client->email)->send(new AppointmentCancelled($data));
 
-            Log::info("Cancellation email sent for appointment {$appointment->id}");
+            // Send push notification
+            $title = 'Appointment Cancelled';
+            $message = "Your {$appointment->type} on {$data['appointment_date']} at {$data['appointment_time']} has been cancelled";
+            if ($reason) {
+                $message .= ". Reason: {$reason}";
+            }
+
+            Helper::sendPush($title, $message, null, null, 'appointment_cancelled', $appointment->id, [$client->id]);
+
+            Log::info("Cancellation email and push notification sent for appointment {$appointment->id}");
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to send cancellation email for appointment {$appointment->id}: " . $e->getMessage());
+            Log::error("Failed to send cancellation for appointment {$appointment->id}: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Send appointment rescheduled email
+     * Send appointment rescheduled email and push notification
      *
      * @param Appointment $oldAppointment
      * @param Appointment $newAppointment
@@ -168,12 +193,19 @@ class AppointmentNotificationService
                 'notes' => $newAppointment->notes
             ];
 
+            // Send email
             Mail::to($client->email)->send(new AppointmentRescheduled($data));
 
-            Log::info("Rescheduled email sent for appointment {$newAppointment->id}");
+            // Send push notification
+            $title = 'Appointment Rescheduled';
+            $message = "Your {$newAppointment->type} has been rescheduled to {$data['new_date']} at {$data['new_time']}";
+
+            Helper::sendPush($title, $message, null, null, 'appointment_rescheduled', $newAppointment->id, [$client->id]);
+
+            Log::info("Rescheduled email and push notification sent for appointment {$newAppointment->id}");
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to send rescheduled email for appointment {$newAppointment->id}: " . $e->getMessage());
+            Log::error("Failed to send rescheduled notification for appointment {$newAppointment->id}: " . $e->getMessage());
             return false;
         }
     }
@@ -216,7 +248,7 @@ class AppointmentNotificationService
     }
 
     /**
-     * Send no-show follow-up email
+     * Send no-show follow-up email and push notification
      *
      * @param Appointment $appointment
      * @return bool
@@ -243,10 +275,16 @@ class AppointmentNotificationService
             // Use existing reminder template for now, can create specific no-show template later
             Mail::to($client->email)->send(new AppointmentReminder($data));
 
-            Log::info("No-show follow-up email sent for appointment {$appointment->id}");
+            // Send push notification
+            $title = 'Missed Appointment';
+            $message = "We missed you at your {$appointment->type} appointment today. Please reschedule with {$coach->first_name}";
+
+            Helper::sendPush($title, $message, null, null, 'appointment_noshow', $appointment->id, [$client->id]);
+
+            Log::info("No-show follow-up email and push notification sent for appointment {$appointment->id}");
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to send no-show email for appointment {$appointment->id}: " . $e->getMessage());
+            Log::error("Failed to send no-show notification for appointment {$appointment->id}: " . $e->getMessage());
             return false;
         }
     }

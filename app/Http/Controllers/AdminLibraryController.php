@@ -39,9 +39,7 @@ class AdminLibraryController extends Controller
 
     public function getWorkoutLibrary(Request $request)
     {
-        $admin = $this->verifyAdmin();
-        if ($admin instanceof \Illuminate\Http\JsonResponse) return $admin;
-
+        // Allow all authenticated users to view workout library
         try {
             $workouts = WorkoutLibrary::with('creator:id,first_name,last_name,email')
                 ->when($request->search, fn($q, $search) =>
@@ -140,9 +138,7 @@ class AdminLibraryController extends Controller
 
     public function getNutritionPlanLibrary(Request $request)
     {
-        $admin = $this->verifyAdmin();
-        if ($admin instanceof \Illuminate\Http\JsonResponse) return $admin;
-
+        // Allow all authenticated users to view nutrition plan library
         try {
             $plans = NutritionPlanLibrary::with('creator:id,first_name,last_name,email')
                 ->when($request->search, fn($q, $search) =>
@@ -244,9 +240,7 @@ class AdminLibraryController extends Controller
 
     public function getChallengeLibrary(Request $request)
     {
-        $admin = $this->verifyAdmin();
-        if ($admin instanceof \Illuminate\Http\JsonResponse) return $admin;
-
+        // Allow all authenticated users to view challenge library
         try {
             $challenges = ChallengeLibrary::with('creator:id,first_name,last_name,email')
                 ->when($request->search, fn($q, $search) =>
@@ -340,9 +334,7 @@ class AdminLibraryController extends Controller
 
     public function getVideoLibrary(Request $request, $type)
     {
-        $admin = $this->verifyAdmin();
-        if ($admin instanceof \Illuminate\Http\JsonResponse) return $admin;
-
+        // Allow all authenticated users to view video library
         try {
             $modelMap = [
                 'fitness' => FitnessVideosLibrary::class,

@@ -92,6 +92,11 @@ return [
         'base_url' => env('DID_BASE_URL', 'https://api.d-id.com'),
     ],
 
+    'aiml' => [
+        'api_key' => env('AIML_API_KEY', ''),
+        'base_url' => env('AIML_BASE_URL', 'https://api.aimlapi.com/v2'),
+    ],
+
     'support_mail' => [
         'host' => env('SUPPORT_MAIL_HOST', 'smtp.gmail.com'),
         'port' => env('SUPPORT_MAIL_PORT', 587),
