@@ -1,0 +1,5 @@
+
+# Local admin account creation scripts (contains passwords)
+CREATE_ADMIN_ACCOUNTS_LOCAL.sh
+database/sql/create_charley_admin.sql
+.env
