@@ -1331,4 +1331,124 @@ class WorkoutController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get user workout plan with enhanced calendar data (v2)
+     * GET /api/customer/get-user-workout-plan-v2
+     */
+    public function getUserWorkoutPlanV2(Request $request)
+    {
+        try {
+            $userId = $request->get('user_id', auth()->id());
+
+            // Get active workout plan
+            $workoutPlan = DB::table('user_workout_plans')
+                ->where('user_id', $userId)
+                ->where('is_active', 1)
+                ->first();
+
+            if (!$workoutPlan) {
+                return response()->json([
+                    'success' => true,
+                    'data' => null,
+                    'message' => 'No active workout plan found'
+                ]);
+            }
+
+            // Get all workouts in the plan with calendar integration data
+            $workouts = DB::table('workout_plan_workouts')
+                ->where('workout_plan_id', $workoutPlan->id)
+                ->get()
+                ->map(function($workout) {
+                    // Get workout details
+                    $workoutDetails = DB::table('workouts')->find($workout->workout_id);
+
+                    // Get exercises for this workout
+                    $exercises = DB::table('workout_exercises')
+                        ->where('workout_id', $workout->workout_id)
+                        ->get();
+
+                    return [
+                        'id' => $workout->id,
+                        'workout_id' => $workout->workout_id,
+                        'day_of_week' => $workout->day_of_week,
+                        'scheduled_time' => $workout->scheduled_time,
+                        'order_in_plan' => $workout->order_in_plan,
+                        'is_rest_day' => (bool)$workout->is_rest_day,
+                        'workout_details' => [
+                            'name' => $workoutDetails->name ?? 'Workout',
+                            'description' => $workoutDetails->description ?? '',
+                            'duration_minutes' => $workoutDetails->duration_minutes ?? 0,
+                            'difficulty_level' => $workoutDetails->difficulty_level ?? 'intermediate',
+                            'type' => $workoutDetails->type ?? 'strength',
+                        ],
+                        'exercises_count' => $exercises->count(),
+                        'total_sets' => $exercises->sum('sets'),
+                        'calendar_data' => [
+                            'title' => $workoutDetails->name ?? 'Workout',
+                            'color' => $this->getWorkoutColor($workoutDetails->type ?? 'strength'),
+                            'duration' => ($workoutDetails->duration_minutes ?? 0) . ' min',
+                            'icon' => $this->getWorkoutIcon($workoutDetails->type ?? 'strength')
+                        ]
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'plan_id' => $workoutPlan->id,
+                    'plan_name' => $workoutPlan->name,
+                    'start_date' => $workoutPlan->start_date,
+                    'end_date' => $workoutPlan->end_date,
+                    'duration_weeks' => $workoutPlan->duration_weeks,
+                    'workouts' => $workouts,
+                    'total_workouts_per_week' => $workouts->where('is_rest_day', false)->count(),
+                    'rest_days_per_week' => $workouts->where('is_rest_day', true)->count()
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve workout plan: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get workout type color for calendar display
+     */
+    private function getWorkoutColor($type)
+    {
+        $colors = [
+            'strength' => '#4CAF50',
+            'cardio' => '#2196F3',
+            'flexibility' => '#FF9800',
+            'hiit' => '#F44336',
+            'yoga' => '#9C27B0',
+            'crossfit' => '#607D8B',
+            'sports' => '#00BCD4',
+            'recovery' => '#8BC34A'
+        ];
+
+        return $colors[$type] ?? '#757575';
+    }
+
+    /**
+     * Get workout type icon for calendar display
+     */
+    private function getWorkoutIcon($type)
+    {
+        $icons = [
+            'strength' => 'dumbbell',
+            'cardio' => 'running',
+            'flexibility' => 'spa',
+            'hiit' => 'flash',
+            'yoga' => 'meditation',
+            'crossfit' => 'fitness',
+            'sports' => 'sports',
+            'recovery' => 'healing'
+        ];
+
+        return $icons[$type] ?? 'fitness';
+    }
 }

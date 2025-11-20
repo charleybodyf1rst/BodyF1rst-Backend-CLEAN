@@ -757,4 +757,594 @@ class MessagingController extends Controller
             return response(['status' => 500, 'message' => 'Failed to search messages'], 500);
         }
     }
+
+    // ========================================================================
+    // GROUP CHAT MANAGEMENT
+    // ========================================================================
+
+    /**
+     * Create group chat
+     * POST /api/messaging/group-chat
+     */
+    public function createGroupChat(Request $request)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'participant_ids' => 'required|array|min:1',
+            'participant_ids.*' => 'integer',
+            'participant_types' => 'array',
+        ]);
+
+        if ($validator->fails()) {
+            return response(['status' => 422, 'message' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            $conversation = Conversation::create([
+                'type' => 'group',
+                'name' => $request->name,
+                'description' => $request->description,
+                'created_by' => $authUser['id'],
+            ]);
+
+            // Add creator as admin
+            $conversation->addParticipant($authUser['id'], $authUser['type'], true);
+
+            // Add other participants
+            foreach ($request->participant_ids as $index => $participantId) {
+                $participantType = $request->participant_types[$index] ?? 'user';
+                $conversation->addParticipant($participantId, $participantType);
+            }
+
+            $conversation->load(['participants', 'lastMessage']);
+
+            DB::commit();
+
+            return response([
+                'status' => 200,
+                'message' => 'Group chat created successfully',
+                'data' => $conversation
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error creating group chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to create group chat'], 500);
+        }
+    }
+
+    /**
+     * Get group chat details
+     * GET /api/messaging/group-chat/{id}
+     */
+    public function getGroupChat(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::where('id', $id)
+                ->where('type', 'group')
+                ->with(['participants', 'lastMessage'])
+                ->first();
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Group chat not found'], 404);
+            }
+
+            // Verify user is participant
+            if (!$conversation->hasParticipant($authUser['id'], $authUser['type'])) {
+                return response(['status' => 403, 'message' => 'Not a participant'], 403);
+            }
+
+            return response([
+                'status' => 200,
+                'message' => 'Group chat retrieved successfully',
+                'data' => $conversation
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error getting group chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to get group chat'], 500);
+        }
+    }
+
+    /**
+     * Send message to group chat
+     * POST /api/messaging/group-chat/{id}/message
+     */
+    public function sendGroupMessage(Request $request, $id)
+    {
+        $request->merge(['conversation_id' => $id]);
+        return $this->sendMessage($request);
+    }
+
+    /**
+     * Join group chat
+     * POST /api/messaging/group-chat/{id}/join
+     */
+    public function joinGroupChat(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::where('id', $id)
+                ->where('type', 'group')
+                ->first();
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Group chat not found'], 404);
+            }
+
+            // Check if already a participant
+            if ($conversation->hasParticipant($authUser['id'], $authUser['type'])) {
+                return response(['status' => 400, 'message' => 'Already a member'], 400);
+            }
+
+            $conversation->addParticipant($authUser['id'], $authUser['type']);
+
+            return response([
+                'status' => 200,
+                'message' => 'Joined group chat successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error joining group chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to join group chat'], 500);
+        }
+    }
+
+    /**
+     * Leave group chat
+     * POST /api/messaging/group-chat/{id}/leave
+     */
+    public function leaveGroupChat(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::where('id', $id)
+                ->where('type', 'group')
+                ->first();
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Group chat not found'], 404);
+            }
+
+            $participant = $conversation->participants()
+                ->where('participant_id', $authUser['id'])
+                ->where('participant_type', $authUser['type'])
+                ->first();
+
+            if (!$participant) {
+                return response(['status' => 400, 'message' => 'Not a member'], 400);
+            }
+
+            $participant->update(['left_at' => now()]);
+
+            return response([
+                'status' => 200,
+                'message' => 'Left group chat successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error leaving group chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to leave group chat'], 500);
+        }
+    }
+
+    /**
+     * Update group chat
+     * PUT /api/messaging/group-chat/{id}
+     */
+    public function updateGroupChat(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response(['status' => 422, 'message' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $conversation = Conversation::where('id', $id)
+                ->where('type', 'group')
+                ->first();
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Group chat not found'], 404);
+            }
+
+            // Check if user is admin
+            $participant = $conversation->participants()
+                ->where('participant_id', $authUser['id'])
+                ->where('participant_type', $authUser['type'])
+                ->where('is_admin', true)
+                ->first();
+
+            if (!$participant) {
+                return response(['status' => 403, 'message' => 'Only admins can update group chat'], 403);
+            }
+
+            $conversation->update($request->only(['name', 'description']));
+
+            return response([
+                'status' => 200,
+                'message' => 'Group chat updated successfully',
+                'data' => $conversation
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error updating group chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to update group chat'], 500);
+        }
+    }
+
+    // ========================================================================
+    // ORGANIZATION GROUP CHAT
+    // ========================================================================
+
+    /**
+     * Create organization group chat
+     * POST /api/messaging/group/organization/{organizationId}
+     */
+    public function createOrganizationGroupChat(Request $request, $organizationId)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response(['status' => 422, 'message' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            // Check if organization chat already exists
+            $existingConversation = Conversation::where('type', 'organization')
+                ->where('organization_id', $organizationId)
+                ->first();
+
+            if ($existingConversation) {
+                return response([
+                    'status' => 200,
+                    'message' => 'Organization chat already exists',
+                    'data' => $existingConversation
+                ], 200);
+            }
+
+            DB::beginTransaction();
+
+            $conversation = Conversation::create([
+                'type' => 'organization',
+                'name' => $request->name ?? 'Organization Chat',
+                'description' => $request->description,
+                'organization_id' => $organizationId,
+                'created_by' => $authUser['id'],
+            ]);
+
+            $conversation->addParticipant($authUser['id'], $authUser['type'], true);
+
+            $conversation->load(['participants', 'lastMessage']);
+
+            DB::commit();
+
+            return response([
+                'status' => 200,
+                'message' => 'Organization chat created successfully',
+                'data' => $conversation
+            ], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Error creating organization chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to create organization chat'], 500);
+        }
+    }
+
+    /**
+     * Get organization group chat
+     * GET /api/messaging/group/organization/{organizationId}
+     */
+    public function getOrganizationGroupChat(Request $request, $organizationId)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::where('type', 'organization')
+                ->where('organization_id', $organizationId)
+                ->with(['participants', 'lastMessage'])
+                ->first();
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Organization chat not found'], 404);
+            }
+
+            return response([
+                'status' => 200,
+                'message' => 'Organization chat retrieved successfully',
+                'data' => $conversation
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error getting organization chat: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to get organization chat'], 500);
+        }
+    }
+
+    // ========================================================================
+    // CHAT ROOMS
+    // ========================================================================
+
+    /**
+     * Get chat rooms
+     * GET /api/messaging/chat-rooms
+     */
+    public function getChatRooms(Request $request)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $chatRooms = DB::table('chat_rooms')
+                ->where('is_active', true)
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            return response([
+                'status' => 200,
+                'message' => 'Chat rooms retrieved successfully',
+                'data' => $chatRooms
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error getting chat rooms: ' . $e->getMessage());
+            return response(['status' => 200, 'message' => 'Chat rooms retrieved', 'data' => []], 200);
+        }
+    }
+
+    /**
+     * Create chat room
+     * POST /api/messaging/chat-rooms
+     */
+    public function createChatRoom(Request $request)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'topic' => 'nullable|string|max:100',
+        ]);
+
+        if ($validator->fails()) {
+            return response(['status' => 422, 'message' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $chatRoomId = DB::table('chat_rooms')->insertGetId([
+                'name' => $request->name,
+                'description' => $request->description,
+                'topic' => $request->topic,
+                'created_by' => $authUser['id'],
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $chatRoom = DB::table('chat_rooms')->find($chatRoomId);
+
+            return response([
+                'status' => 200,
+                'message' => 'Chat room created successfully',
+                'data' => $chatRoom
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error creating chat room: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to create chat room'], 500);
+        }
+    }
+
+    /**
+     * Get chat room details
+     * GET /api/messaging/chat-rooms/{id}
+     */
+    public function getChatRoom(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $chatRoom = DB::table('chat_rooms')
+                ->where('id', $id)
+                ->first();
+
+            if (!$chatRoom) {
+                return response(['status' => 404, 'message' => 'Chat room not found'], 404);
+            }
+
+            // Get recent messages
+            $messages = DB::table('chat_room_messages')
+                ->where('chat_room_id', $id)
+                ->orderBy('created_at', 'desc')
+                ->limit(50)
+                ->get();
+
+            return response([
+                'status' => 200,
+                'message' => 'Chat room retrieved successfully',
+                'data' => [
+                    'chat_room' => $chatRoom,
+                    'messages' => $messages
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error getting chat room: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to get chat room'], 500);
+        }
+    }
+
+    /**
+     * Send message to chat room
+     * POST /api/messaging/chat-rooms/{id}/message
+     */
+    public function sendChatRoomMessage(Request $request, $id)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'message' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response(['status' => 422, 'message' => $validator->errors()->first()], 422);
+        }
+
+        try {
+            $chatRoom = DB::table('chat_rooms')
+                ->where('id', $id)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$chatRoom) {
+                return response(['status' => 404, 'message' => 'Chat room not found'], 404);
+            }
+
+            $messageId = DB::table('chat_room_messages')->insertGetId([
+                'chat_room_id' => $id,
+                'user_id' => $authUser['id'],
+                'user_type' => $authUser['type'],
+                'message' => $request->message,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $message = DB::table('chat_room_messages')->find($messageId);
+
+            return response([
+                'status' => 200,
+                'message' => 'Message sent successfully',
+                'data' => $message
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error sending chat room message: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to send message'], 500);
+        }
+    }
+
+    // ========================================================================
+    // CONVERSATION MANAGEMENT
+    // ========================================================================
+
+    /**
+     * Mark conversation as read
+     * POST /api/messaging/conversations/{conversationId}/read
+     */
+    public function markAsRead(Request $request, $conversationId)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::find($conversationId);
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Conversation not found'], 404);
+            }
+
+            $participant = $conversation->participants()
+                ->where('participant_id', $authUser['id'])
+                ->where('participant_type', $authUser['type'])
+                ->first();
+
+            if (!$participant) {
+                return response(['status' => 403, 'message' => 'Not a participant'], 403);
+            }
+
+            $participant->markAsRead();
+
+            return response([
+                'status' => 200,
+                'message' => 'Conversation marked as read'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error marking conversation as read: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to mark as read'], 500);
+        }
+    }
+
+    /**
+     * Delete conversation
+     * DELETE /api/messaging/conversations/{conversationId}
+     */
+    public function deleteConversation(Request $request, $conversationId)
+    {
+        $authUser = $this->getAuthUser($request);
+        if (!$authUser) {
+            return response(['status' => 401, 'message' => 'Unauthorized'], 401);
+        }
+
+        try {
+            $conversation = Conversation::find($conversationId);
+
+            if (!$conversation) {
+                return response(['status' => 404, 'message' => 'Conversation not found'], 404);
+            }
+
+            $participant = $conversation->participants()
+                ->where('participant_id', $authUser['id'])
+                ->where('participant_type', $authUser['type'])
+                ->first();
+
+            if (!$participant) {
+                return response(['status' => 403, 'message' => 'Not a participant'], 403);
+            }
+
+            // Soft delete by marking participant as left
+            $participant->update(['left_at' => now()]);
+
+            return response([
+                'status' => 200,
+                'message' => 'Conversation deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error deleting conversation: ' . $e->getMessage());
+            return response(['status' => 500, 'message' => 'Failed to delete conversation'], 500);
+        }
+    }
 }

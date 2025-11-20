@@ -457,6 +457,36 @@ Route::group(['namespace' => 'Admin', 'prefix' => "admin", "as" => "admin."], fu
         Route::get('/get-faqs', [\App\Http\Controllers\Admin\AuthController::class, "getFaqs"])->name("getFaqs.api");
         Route::delete('/delete-faq/{id?}', [\App\Http\Controllers\Admin\AuthController::class, "deleteFaq"])->name("deleteFaq.api");
 
+        // ========== NEW: MISSING ADMIN DASHBOARD ENDPOINTS ==========
+        // Admin Dashboard & Analytics
+        Route::get('/get-activity-logs', [\App\Http\Controllers\Admin\DashboardController::class, 'getActivityLogs'])->name('getActivityLogs.api');
+        Route::get('/get-performance-metrics', [\App\Http\Controllers\Admin\DashboardController::class, 'getPerformanceMetrics'])->name('getPerformanceMetrics.api');
+        Route::get('/get-recent-activity', [\App\Http\Controllers\Admin\DashboardController::class, 'getRecentActivity'])->name('getRecentActivity.api');
+        Route::get('/get-system-health', [\App\Http\Controllers\Admin\DashboardController::class, 'getSystemHealth'])->name('getSystemHealth.api');
+        Route::get('/dashboard-stats', [\App\Http\Controllers\Admin\DashboardController::class, 'getDashboardStats'])->name('getDashboardStats.api');
+
+        // FAQ Analytics (additional to existing FAQ routes)
+        Route::get('/faq-analytics', [\App\Http\Controllers\Admin\AuthController::class, 'getFaqAnalytics'])->name('getFaqAnalytics.api');
+
+        // Document Management
+        Route::post('/upload-document', [\App\Http\Controllers\Admin\DocumentController::class, 'uploadDocument'])->name('uploadDocument.api');
+        Route::get('/get-documents', [\App\Http\Controllers\Admin\DocumentController::class, 'getDocuments'])->name('getDocuments.api');
+        Route::get('/download-document/{id}', [\App\Http\Controllers\Admin\DocumentController::class, 'downloadDocument'])->name('downloadDocument.api');
+        Route::delete('/delete-document/{id}', [\App\Http\Controllers\Admin\DocumentController::class, 'deleteDocument'])->name('deleteDocument.api');
+
+        // Admin Notifications
+        Route::post('/send-notification', [\App\Http\Controllers\Admin\NotificationController::class, 'sendNotification'])->name('sendNotification.api');
+
+        // User Management Helpers
+        Route::get('/get-users-drop-down', [\App\Http\Controllers\Admin\UserController::class, 'getUsersDropDown'])->name('getUsersDropDown.api');
+
+        // Admin Nutrition Plan Management
+        Route::get('/get-nutrition-plans', [\App\Http\Controllers\Admin\NutritionController::class, 'getNutritionPlans'])->name('getNutritionPlans.api');
+        Route::post('/nutrition-plans/create', [\App\Http\Controllers\Admin\NutritionController::class, 'createNutritionPlan'])->name('createNutritionPlan.api');
+        Route::get('/nutrition-plans/client/{clientId}', [\App\Http\Controllers\Admin\NutritionController::class, 'getClientNutritionPlans'])->name('getClientNutritionPlans.api');
+        Route::put('/nutrition-plans/{id}', [\App\Http\Controllers\Admin\NutritionController::class, 'updateNutritionPlan'])->name('updateNutritionPlan.api');
+        Route::delete('/nutrition-plans/{id}', [\App\Http\Controllers\Admin\NutritionController::class, 'deleteNutritionPlan'])->name('deleteNutritionPlan.api');
+
         }); // SECURITY FIX: Close auth:admin middleware HERE (moved from line 155)
             // All routes above (lines 53-374) now require admin authentication
 
@@ -547,11 +577,167 @@ Route::group(['namespace' => 'Customer', 'prefix' => 'customer', 'as' => 'custom
 
         //Body Points
         Route::get('/get-body-points-history',[\App\Http\Controllers\Customer\AuthController::class,'getBodyPointsHistory'])->name('getBodyPointsHistory.api');
-        
+
+        // ========== NEW: CBT SYSTEM ROUTES ==========
+        // CBT Progress & Dashboard
+        Route::prefix('cbt')->group(function() {
+            Route::get('/progress', [\App\Http\Controllers\Customer\CBTController::class, 'getProgress'])->name('getCBTProgress.api');
+            Route::get('/dashboard', [\App\Http\Controllers\Customer\CBTController::class, 'getDashboard'])->name('getCBTDashboard.api');
+            Route::get('/stats', [\App\Http\Controllers\Customer\CBTController::class, 'getStats'])->name('getCBTStats.api');
+
+            // CBT Lessons
+            Route::get('/lessons/current-week', [\App\Http\Controllers\Customer\CBTController::class, 'getCurrentWeekLessons'])->name('getCurrentWeekLessons.api');
+            Route::get('/lessons/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'getLesson'])->name('getCBTLesson.api');
+            Route::post('/lessons/{id}/complete', [\App\Http\Controllers\Customer\CBTController::class, 'completeLesson'])->name('completeCBTLesson.api');
+            Route::get('/lessons/week/{weekNumber}', [\App\Http\Controllers\Customer\CBTController::class, 'getWeekLessons'])->name('getWeekLessons.api');
+
+            // CBT Journal
+            Route::get('/journal/entries', [\App\Http\Controllers\Customer\CBTController::class, 'getJournalEntries'])->name('getJournalEntries.api');
+            Route::post('/journal/entries', [\App\Http\Controllers\Customer\CBTController::class, 'createJournalEntry'])->name('createJournalEntry.api');
+            Route::get('/journal/entries/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'getJournalEntry'])->name('getJournalEntry.api');
+            Route::put('/journal/entries/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'updateJournalEntry'])->name('updateJournalEntry.api');
+            Route::delete('/journal/entries/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'deleteJournalEntry'])->name('deleteJournalEntry.api');
+
+            // CBT Assessments
+            Route::get('/assessments', [\App\Http\Controllers\Customer\CBTController::class, 'getAssessments'])->name('getCBTAssessments.api');
+            Route::post('/assessments', [\App\Http\Controllers\Customer\CBTController::class, 'submitAssessment'])->name('submitCBTAssessment.api');
+            Route::get('/assessments/{id}/results', [\App\Http\Controllers\Customer\CBTController::class, 'getAssessmentResults'])->name('getAssessmentResults.api');
+
+            // CBT Goals
+            Route::get('/goals', [\App\Http\Controllers\Customer\CBTController::class, 'getGoals'])->name('getCBTGoals.api');
+            Route::post('/goals', [\App\Http\Controllers\Customer\CBTController::class, 'createGoal'])->name('createCBTGoal.api');
+            Route::put('/goals/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'updateGoal'])->name('updateCBTGoal.api');
+            Route::delete('/goals/{id}', [\App\Http\Controllers\Customer\CBTController::class, 'deleteGoal'])->name('deleteCBTGoal.api');
+
+            // CBT Course Hub
+            Route::get('/course-hub', [\App\Http\Controllers\Customer\CBTController::class, 'getCourseHub'])->name('getCBTCourseHub.api');
+            Route::get('/course-hub/videos', [\App\Http\Controllers\Customer\CBTController::class, 'getCourseVideos'])->name('getCourseVideos.api');
+
+            // CBT Weekly Check-ins
+            Route::get('/check-ins', [\App\Http\Controllers\Customer\CBTController::class, 'getCheckIns'])->name('getCBTCheckIns.api');
+            Route::post('/check-ins', [\App\Http\Controllers\Customer\CBTController::class, 'submitCheckIn'])->name('submitCBTCheckIn.api');
+        });
+
+        // ========== NEW: COACH DASHBOARD ROUTES ==========
+        Route::prefix('coach')->group(function() {
+            // Coach Dashboard
+            Route::get('/dashboard', [\App\Http\Controllers\Coach\DashboardController::class, 'getDashboard'])->name('getCoachDashboard.api');
+            Route::get('/dashboard/overview', [\App\Http\Controllers\Coach\DashboardController::class, 'getOverview'])->name('getCoachOverview.api');
+            Route::get('/dashboard/stats', [\App\Http\Controllers\Coach\DashboardController::class, 'getStats'])->name('getCoachStats.api');
+
+            // Client Management
+            Route::get('/clients', [\App\Http\Controllers\Coach\ClientController::class, 'getClients'])->name('getCoachClients.api');
+            Route::get('/clients/{id}', [\App\Http\Controllers\Coach\ClientController::class, 'getClient'])->name('getCoachClient.api');
+            Route::get('/clients/{id}/progress', [\App\Http\Controllers\Coach\ClientController::class, 'getClientProgress'])->name('getClientProgress.api');
+            Route::get('/clients/{id}/workouts', [\App\Http\Controllers\Coach\ClientController::class, 'getClientWorkouts'])->name('getClientWorkouts.api');
+            Route::get('/clients/{id}/nutrition', [\App\Http\Controllers\Coach\ClientController::class, 'getClientNutrition'])->name('getClientNutrition.api');
+            Route::get('/clients/{id}/measurements', [\App\Http\Controllers\Coach\ClientController::class, 'getClientMeasurements'])->name('getClientMeasurements.api');
+            Route::post('/clients/{id}/notes', [\App\Http\Controllers\Coach\ClientController::class, 'addClientNote'])->name('addClientNote.api');
+
+            // Availability & Scheduling
+            Route::get('/{id}/available-slots', [\App\Http\Controllers\Coach\AvailabilityController::class, 'getAvailableSlots'])->name('getCoachAvailableSlots.api');
+            Route::post('/availability', [\App\Http\Controllers\Coach\AvailabilityController::class, 'setAvailability'])->name('setCoachAvailability.api');
+            Route::get('/availability', [\App\Http\Controllers\Coach\AvailabilityController::class, 'getAvailability'])->name('getCoachAvailability.api');
+            Route::put('/availability/{id}', [\App\Http\Controllers\Coach\AvailabilityController::class, 'updateAvailability'])->name('updateCoachAvailability.api');
+            Route::delete('/availability/{id}', [\App\Http\Controllers\Coach\AvailabilityController::class, 'deleteAvailability'])->name('deleteCoachAvailability.api');
+
+            // Appointments & Sessions
+            Route::get('/appointments', [\App\Http\Controllers\Coach\AppointmentController::class, 'getAppointments'])->name('getCoachAppointments.api');
+            Route::post('/appointments', [\App\Http\Controllers\Coach\AppointmentController::class, 'createAppointment'])->name('createCoachAppointment.api');
+            Route::get('/appointments/{id}', [\App\Http\Controllers\Coach\AppointmentController::class, 'getAppointment'])->name('getCoachAppointment.api');
+            Route::put('/appointments/{id}', [\App\Http\Controllers\Coach\AppointmentController::class, 'updateAppointment'])->name('updateCoachAppointment.api');
+            Route::delete('/appointments/{id}', [\App\Http\Controllers\Coach\AppointmentController::class, 'cancelAppointment'])->name('cancelCoachAppointment.api');
+            Route::post('/appointments/{id}/complete', [\App\Http\Controllers\Coach\AppointmentController::class, 'completeAppointment'])->name('completeCoachAppointment.api');
+
+            // Workout Plan Assignment
+            Route::post('/clients/{id}/assign-workout', [\App\Http\Controllers\Coach\PlanController::class, 'assignWorkout'])->name('assignWorkoutToClient.api');
+            Route::post('/clients/{id}/assign-nutrition', [\App\Http\Controllers\Coach\PlanController::class, 'assignNutritionPlan'])->name('assignNutritionToClient.api');
+
+            // Communication
+            Route::get('/messages', [\App\Http\Controllers\Coach\MessageController::class, 'getMessages'])->name('getCoachMessages.api');
+            Route::post('/messages/{clientId}', [\App\Http\Controllers\Coach\MessageController::class, 'sendMessage'])->name('sendCoachMessage.api');
+
+            // Analytics
+            Route::get('/analytics/revenue', [\App\Http\Controllers\Coach\AnalyticsController::class, 'getRevenue'])->name('getCoachRevenue.api');
+            Route::get('/analytics/client-retention', [\App\Http\Controllers\Coach\AnalyticsController::class, 'getClientRetention'])->name('getCoachRetention.api');
+        });
+
+        // ========== NEW: SOCIAL FEATURES ROUTES ==========
+        Route::prefix('social')->group(function() {
+            // Friends Management
+            Route::get('/friends', [\App\Http\Controllers\Customer\SocialController::class, 'getFriends'])->name('getFriends.api');
+            Route::post('/friends/request/{userId}', [\App\Http\Controllers\Customer\SocialController::class, 'sendFriendRequest'])->name('sendFriendRequest.api');
+            Route::post('/friends/accept/{requestId}', [\App\Http\Controllers\Customer\SocialController::class, 'acceptFriendRequest'])->name('acceptFriendRequest.api');
+            Route::post('/friends/reject/{requestId}', [\App\Http\Controllers\Customer\SocialController::class, 'rejectFriendRequest'])->name('rejectFriendRequest.api');
+            Route::delete('/friends/{userId}', [\App\Http\Controllers\Customer\SocialController::class, 'removeFriend'])->name('removeFriend.api');
+            Route::get('/friends/requests', [\App\Http\Controllers\Customer\SocialController::class, 'getFriendRequests'])->name('getFriendRequests.api');
+            Route::get('/friends/suggestions', [\App\Http\Controllers\Customer\SocialController::class, 'getFriendSuggestions'])->name('getFriendSuggestions.api');
+
+            // Activity Feed
+            Route::get('/activity-feed', [\App\Http\Controllers\Customer\SocialController::class, 'getActivityFeed'])->name('getActivityFeed.api');
+            Route::post('/activity-feed', [\App\Http\Controllers\Customer\SocialController::class, 'postActivity'])->name('postActivity.api');
+            Route::post('/activity-feed/{id}/like', [\App\Http\Controllers\Customer\SocialController::class, 'likeActivity'])->name('likeActivity.api');
+            Route::post('/activity-feed/{id}/comment', [\App\Http\Controllers\Customer\SocialController::class, 'commentActivity'])->name('commentActivity.api');
+            Route::delete('/activity-feed/{id}', [\App\Http\Controllers\Customer\SocialController::class, 'deleteActivity'])->name('deleteActivity.api');
+
+            // User Profiles
+            Route::get('/user/{userId}/profile', [\App\Http\Controllers\Customer\SocialController::class, 'getUserProfile'])->name('getUserProfile.api');
+            Route::get('/user/{userId}/stats', [\App\Http\Controllers\Customer\SocialController::class, 'getUserStats'])->name('getUserStats.api');
+            Route::get('/user/{userId}/achievements', [\App\Http\Controllers\Customer\SocialController::class, 'getUserAchievements'])->name('getUserAchievements.api');
+
+            // Leaderboard
+            Route::get('/leaderboard', [\App\Http\Controllers\Customer\SocialController::class, 'getLeaderboard'])->name('getSocialLeaderboard.api');
+            Route::get('/leaderboard/friends', [\App\Http\Controllers\Customer\SocialController::class, 'getFriendsLeaderboard'])->name('getFriendsLeaderboard.api');
+            Route::get('/leaderboard/organization', [\App\Http\Controllers\Customer\SocialController::class, 'getOrganizationLeaderboard'])->name('getOrgLeaderboard.api');
+
+            // Challenges
+            Route::get('/challenges', [\App\Http\Controllers\Customer\SocialController::class, 'getSocialChallenges'])->name('getSocialChallenges.api');
+        });
+
+        // ========== NEW: ANALYTICS ROUTES ==========
+        Route::prefix('analytics')->group(function() {
+            // User Analytics
+            Route::get('/overview', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getOverview'])->name('getAnalyticsOverview.api');
+            Route::get('/progress', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getProgress'])->name('getUserProgress.api');
+            Route::get('/workout-stats', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getWorkoutStats'])->name('getWorkoutStats.api');
+            Route::get('/nutrition-stats', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getNutritionStats'])->name('getNutritionStats.api');
+            Route::get('/body-composition', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getBodyComposition'])->name('getBodyComposition.api');
+            Route::get('/weekly-summary', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getWeeklySummary'])->name('getWeeklySummary.api');
+            Route::get('/monthly-report', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getMonthlyReport'])->name('getMonthlyReport.api');
+
+            // Achievements & Goals
+            Route::get('/achievements', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getAchievements'])->name('getAchievements.api');
+            Route::get('/goals', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getGoals'])->name('getAnalyticsGoals.api');
+            Route::post('/goals', [\App\Http\Controllers\Customer\AnalyticsController::class, 'createGoal'])->name('createAnalyticsGoal.api');
+            Route::put('/goals/{id}', [\App\Http\Controllers\Customer\AnalyticsController::class, 'updateGoal'])->name('updateAnalyticsGoal.api');
+            Route::post('/goals/{id}/complete', [\App\Http\Controllers\Customer\AnalyticsController::class, 'completeGoal'])->name('completeAnalyticsGoal.api');
+
+            // Streaks & Consistency
+            Route::get('/streaks', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getStreaks'])->name('getStreaks.api');
+            Route::get('/consistency-score', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getConsistencyScore'])->name('getConsistencyScore.api');
+
+            // Comparison & Benchmarks
+            Route::get('/compare/period', [\App\Http\Controllers\Customer\AnalyticsController::class, 'comparePeriods'])->name('comparePeriods.api');
+            Route::get('/benchmarks', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getBenchmarks'])->name('getBenchmarks.api');
+
+            // Export
+            Route::post('/export/pdf', [\App\Http\Controllers\Customer\AnalyticsController::class, 'exportPDF'])->name('exportAnalyticsPDF.api');
+            Route::post('/export/csv', [\App\Http\Controllers\Customer\AnalyticsController::class, 'exportCSV'])->name('exportAnalyticsCSV.api');
+
+            // Body Points & Gamification
+            Route::get('/body-points', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getBodyPoints'])->name('getAnalyticsBodyPoints.api');
+            Route::get('/body-points/history', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getBodyPointsHistory'])->name('getAnalyticsBodyPointsHistory.api');
+            Route::get('/badges', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getBadges'])->name('getBadges.api');
+            Route::get('/level', [\App\Http\Controllers\Customer\AnalyticsController::class, 'getUserLevel'])->name('getUserLevel.api');
+        });
+
         //Leaderboard
         Route::post('/leaderboard',[\App\Http\Controllers\Customer\DashboardController::class,'getLeaderboard'])->name('getLeaderboard.api');
         Route::post('/user-rank',[\App\Http\Controllers\Customer\DashboardController::class,'getUserRank'])->name('getUserRank.api');
-        
+
+        // Enhanced Workout Plan (Calendar Integration)
+        Route::get('/get-user-workout-plan-v2', [\App\Http\Controllers\Customer\WorkoutController::class, 'getUserWorkoutPlanV2'])->name('getUserWorkoutPlanV2.api');
+
         //Nutrition Tracking
         Route::get('/get-daily-nutrition',[\App\Http\Controllers\Customer\NutritionController::class,'getDailyNutrition'])->name('getDailyNutrition.api');
         Route::post('/update-nutrition-intake',[\App\Http\Controllers\Customer\NutritionController::class,'updateNutritionIntake'])->name('updateNutritionIntake.api');

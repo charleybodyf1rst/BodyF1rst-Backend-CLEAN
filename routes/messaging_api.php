@@ -61,6 +61,29 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Report Message
         Route::post('/messages/{messageId}/report', [MessagingController::class, 'reportMessage']);
+
+        // ========== NEW: ADDITIONAL MESSAGING ENDPOINTS ==========
+        // Group Chat Management
+        Route::post('/group-chat', [MessagingController::class, 'createGroupChat']);
+        Route::get('/group-chat/{id}', [MessagingController::class, 'getGroupChat']);
+        Route::post('/group-chat/{id}/message', [MessagingController::class, 'sendGroupMessage']);
+        Route::post('/group-chat/{id}/join', [MessagingController::class, 'joinGroupChat']);
+        Route::post('/group-chat/{id}/leave', [MessagingController::class, 'leaveGroupChat']);
+        Route::put('/group-chat/{id}', [MessagingController::class, 'updateGroupChat']);
+
+        // Organization Group Chat
+        Route::post('/group/organization/{organizationId}', [MessagingController::class, 'createOrganizationGroupChat']);
+        Route::get('/group/organization/{organizationId}', [MessagingController::class, 'getOrganizationGroupChat']);
+
+        // Chat Rooms
+        Route::get('/chat-rooms', [MessagingController::class, 'getChatRooms']);
+        Route::post('/chat-rooms', [MessagingController::class, 'createChatRoom']);
+        Route::get('/chat-rooms/{id}', [MessagingController::class, 'getChatRoom']);
+        Route::post('/chat-rooms/{id}/message', [MessagingController::class, 'sendChatRoomMessage']);
+
+        // Mark Conversations as Read
+        Route::post('/conversations/{conversationId}/read', [MessagingController::class, 'markAsRead']);
+        Route::delete('/conversations/{conversationId}', [MessagingController::class, 'deleteConversation']);
     });
 });
 

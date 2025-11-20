@@ -258,8 +258,46 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get Extended Dashboard Stats
+     * Get Dashboard Stats
      * GET /api/admin/dashboard-stats
+     */
+    public function getDashboardStats(Request $request)
+    {
+        try {
+            $stats = [
+                'total_users' => User::where('role', 'customer')->count(),
+                'active_users' => User::where('role', 'customer')
+                    ->where('last_login_at', '>=', now()->subDays(7))
+                    ->count(),
+                'total_coaches' => User::where('role', 'coach')->count(),
+                'active_coaches' => User::where('role', 'coach')
+                    ->where('last_login_at', '>=', now()->subDays(7))
+                    ->count(),
+                'total_organizations' => DB::table('organizations')->count(),
+                'new_users_this_month' => User::where('role', 'customer')
+                    ->whereMonth('created_at', now()->month)
+                    ->count(),
+                'revenue_this_month' => 0, // TODO: Calculate from payments
+                'active_subscriptions' => 0 // TODO: Count active subscriptions
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $stats
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error fetching dashboard stats',
+                'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    /**
+     * Get Extended Dashboard Stats
+     * GET /api/admin/dashboard-stats-extended
      */
     public function getExtendedDashboardStats(Request $request)
     {
