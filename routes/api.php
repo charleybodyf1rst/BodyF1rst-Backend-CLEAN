@@ -1743,3 +1743,97 @@ Route::prefix('avatar-animation')->group(function () {
         ->name('avatar-animation.credits');
 });
 
+
+
+/*
+|--------------------------------------------------------------------------
+| NEW ENHANCED BACKEND ENDPOINTS - 2025 EXPANSION
+|--------------------------------------------------------------------------
+| Added to support frontend features that were missing backend implementation
+*/
+
+// ===== COACH NUTRITION ANALYTICS =====
+Route::prefix('coaches/analytics/nutrition')->middleware('auth:api')->group(function () {
+    Route::get('/overview', [\App\Http\Controllers\CoachNutritionAnalyticsController::class, 'getOverview']);
+    Route::get('/compliance', [\App\Http\Controllers\CoachNutritionAnalyticsController::class, 'getComplianceAnalytics']);
+    Route::get('/macros', [\App\Http\Controllers\CoachNutritionAnalyticsController::class, 'getMacroAnalytics']);
+});
+
+// ===== COACH CLIENT NUTRITION TRACKING =====
+Route::prefix('coaches/clients')->middleware('auth:api')->group(function () {
+    Route::get('/{id}/nutrition/daily', [\App\Http\Controllers\CoachClientNutritionController::class, 'getDailyLogs']);
+    Route::get('/{id}/nutrition/weekly', [\App\Http\Controllers\CoachClientNutritionController::class, 'getWeeklySummary']);
+    Route::get('/{id}/nutrition/trends', [\App\Http\Controllers\CoachClientNutritionController::class, 'getTrends']);
+    Route::post('/{id}/nutrition/log', [\App\Http\Controllers\CoachClientNutritionController::class, 'addNutritionLog']);
+    Route::put('/{id}/nutrition/goals', [\App\Http\Controllers\CoachClientNutritionController::class, 'updateNutritionGoals']);
+});
+
+// ===== ACTIVITY FEED =====
+Route::prefix('activity-feed')->middleware('auth:api')->group(function () {
+    Route::get('/', [\App\Http\Controllers\ActivityFeedController::class, 'getActivityFeed']);
+    Route::post('/', [\App\Http\Controllers\ActivityFeedController::class, 'createActivity']);
+    Route::post('/like/{id}', [\App\Http\Controllers\ActivityFeedController::class, 'likeActivity']);
+    Route::post('/comment/{id}', [\App\Http\Controllers\ActivityFeedController::class, 'commentOnActivity']);
+    Route::delete('/{id}', [\App\Http\Controllers\ActivityFeedController::class, 'deleteActivity']);
+    Route::delete('/comment/{id}', [\App\Http\Controllers\ActivityFeedController::class, 'deleteComment']);
+});
+
+// ===== LEADERBOARD =====
+Route::prefix('leaderboard')->middleware('auth:api')->group(function () {
+    Route::get('/global', [\App\Http\Controllers\LeaderboardController::class, 'getGlobalLeaderboard']);
+    Route::get('/organization/{id}', [\App\Http\Controllers\LeaderboardController::class, 'getOrganizationLeaderboard']);
+    Route::get('/user/{id}/rank', [\App\Http\Controllers\LeaderboardController::class, 'getUserRank']);
+    Route::get('/friends', [\App\Http\Controllers\LeaderboardController::class, 'getFriendsLeaderboard']);
+});
+
+// ===== AVATAR & GAMIFICATION ENHANCED =====
+Route::prefix('avatar')->middleware('auth:api')->group(function () {
+    Route::get('/catalog', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'getCatalog']);
+    Route::get('/inventory', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'getInventory']);
+    Route::get('/equipped', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'getEquipped']);
+    Route::post('/purchase', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'purchaseItem']);
+    Route::post('/equip', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'equipItem']);
+    Route::post('/unequip', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'unequipItem']);
+});
+
+Route::prefix('gamification')->middleware('auth:api')->group(function () {
+    Route::get('/body-points', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'getBodyPoints']);
+    Route::post('/award-points', [\App\Http\Controllers\AvatarGamificationEnhancedController::class, 'awardBodyPoints']);
+});
+
+// ===== PASSIO AI INTEGRATION ENHANCED =====
+Route::prefix('nutrition/passio')->middleware('auth:api')->group(function () {
+    Route::post('/recognize', [\App\Http\Controllers\PassioIntegrationEnhancedController::class, 'recognizeFoodFromImage']);
+    Route::post('/barcode', [\App\Http\Controllers\PassioIntegrationEnhancedController::class, 'lookupBarcode']);
+    Route::post('/recipe', [\App\Http\Controllers\PassioIntegrationEnhancedController::class, 'analyzeRecipe']);
+});
+
+// ===== FRIENDS & SOCIAL =====
+Route::prefix('friends')->middleware('auth:api')->group(function () {
+    Route::get('/', [\App\Http\Controllers\FriendshipController::class, 'getFriends']);
+    Route::get('/requests/pending', [\App\Http\Controllers\FriendshipController::class, 'getPendingRequests']);
+    Route::get('/requests/sent', [\App\Http\Controllers\FriendshipController::class, 'getSentRequests']);
+    Route::post('/request', [\App\Http\Controllers\FriendshipController::class, 'sendFriendRequest']);
+    Route::post('/accept/{id}', [\App\Http\Controllers\FriendshipController::class, 'acceptFriendRequest']);
+    Route::post('/reject/{id}', [\App\Http\Controllers\FriendshipController::class, 'rejectFriendRequest']);
+    Route::delete('/{id}', [\App\Http\Controllers\FriendshipController::class, 'unfriend']);
+});
+
+Route::get('/users/search', [\App\Http\Controllers\FriendshipController::class, 'searchUsers'])->middleware('auth:api');
+
+// ===== ADMIN ANALYTICS DASHBOARD =====
+Route::prefix('admin/analytics')->middleware('auth:api')->group(function () {
+    Route::get('/dashboard-summary', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getDashboardSummary']);
+    Route::get('/user-growth', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getUserGrowth']);
+    Route::get('/user-demographics', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getUserDemographics']);
+    Route::get('/user-retention', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getUserRetention']);
+    Route::get('/revenue-trends', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getRevenueTrends']);
+    Route::get('/revenue-by-plan', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getRevenueByPlan']);
+    Route::get('/engagement-metrics', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getEngagementMetrics']);
+    Route::get('/popular-content', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getPopularContent']);
+    Route::get('/activity-heatmap', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getActivityHeatmap']);
+    Route::get('/system-performance', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getSystemPerformance']);
+    Route::get('/api-metrics', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getApiMetrics']);
+    Route::get('/error-rates', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'getErrorRates']);
+    Route::post('/export', [\App\Http\Controllers\AdminAnalyticsDashboardController::class, 'exportAnalytics']);
+});
