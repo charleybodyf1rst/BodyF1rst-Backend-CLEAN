@@ -1,0 +1,1125 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Helpers\Helper;
+use App\Http\Controllers\Controller;
+use App\Mail\ResetPasswordMail;
+use App\Mail\SendCredential;
+use App\Mail\SendOtp;
+use App\Models\ActivityLog;
+use App\Models\Admin;
+use App\Models\Challenge;
+use App\Models\Coach;
+use App\Models\Exercise;
+use App\Models\Faq;
+use App\Models\Organization;
+use App\Models\OrganizationSubmission;
+use App\Models\Plan;
+use App\Models\SiteInfo;
+use App\Models\User;
+use App\Models\Video;
+use App\Models\Workout;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
+
+class AuthController extends Controller
+{
+    function login(Request $request)
+    {
+        $rules = array(
+            'email' => 'required|email:filter',
+            'password' => 'required|string|min:8', // Minimum password length
+        );
+        $validation = Validator::make($request->all(), $rules);
+        if ($validation->fails()) {
+            $response = [
+                "status" => 422,
+                "message" =>  $validation->errors()->first(),
+            ];
+        } else {
+            $user = Admin::where('email', $request->email)->first();
+            $coach = Coach::where('email', $request->email)->first();
+            if (isset($user)) {
+                // SECURITY: Removed super_password backdoor - use standard password only
+                if (!Hash::check($request->password, $user->password)) {
+                    // Track failed login attempts for security
+                    $this->trackFailedLogin($request->email);
+
+                    $response = [
+                        'status' => 422,
+                        'message' => 'Invalid email or password',
+                    ];
+                } else {
+                    // Successful password check
+                    if ($user->is_active == 1) {
+                        $token = $user->createToken("authToken")->accessToken;
+
+                        // Reset failed login attempts on successful login
+                        $this->resetFailedLogins($request->email);
+
+                        $user['role'] = "Admin";
+                        $response = [
+                            'status' => 200,
+                            "message" => "Login successful",
+                            'token' => $token,
+                            'role' => "Admin",
+                            'user' => $user,
+                            'user_type' => 'admin',
+                        ];
+                    } else {
+                        $response = [
+                            'status' => 422,
+                            'message' => "Account Blocked!",
+                        ];
+                    }
+                }
+            }
+            else if(isset($coach))
+            {
+                if (!Hash::check($request->password, $coach->password)) {
+                    $response = [
+                        'status' => 422,
+                        "message" => "Invalid Password",
+                    ];
+                } else {
+                    if ($coach->is_active == 1) {
+                        // $otp = rand(000000,999999);
+                        // // $otp = 123456;
+                        // $message = "";
+                        // if($request->is_resend == 1)
+                        // {
+                        //     $coach->otp = $otp;
+                        // }
+                        // $coach->otp = $otp;
+                        // $coach->save();
+
+                        // $name = $coach->first_name .' '.$coach->last_name;
+                        // try{
+                        //     Mail::to($coach->email)->send(new SendOtp($coach,$name));
+                        //     $message = "OTP Send Successfully on your Mail Please Check it out!";
+                        // }
+                        // catch(\Exception $e)
+                        // {
+                        //     $message = "You can't received the OTP through this email id. Kindly contact with support@bodyf1rst.com to register account";
+                        // }
+                        $token = $coach->createToken("coach authToken")->accessToken;
+                        $coach['role'] = "Coach";
+                        $response = [
+                            'status' => 200,
+                            'message' => "Login successful",
+                            'user' => $coach,
+                            'token' => $token,
+                            'user_type' => 'coach',
+                        ];
+                    } else {
+                        $response = [
+                            'status' => 422,
+                            'message' => "Account Blocked!",
+                        ];
+                    }
+                }
+            }
+            else {
+                $response = [
+                    'status' => 422,
+                    'message' => "Invalid Email",
+                ];
+            }
+        }
+        return response($response, $response["status"]);
+    }
+
+    public function verifyLoginOtp(Request $request)
+    {
+        $rules = array(
+            'email' => 'required|email:filter',
+            'password' => 'required',
+            'otp' => 'required',
+        );
+        $validation = Validator::make($request->all(), $rules);
+        if ($validation->fails()) {
+            $response = [
+                "status" => 422,
+                "message" =>  $validation->errors()->first(),
+            ];
+        }
+        else {
+            $user = Admin::where('email', $request->email)->first();
+            $coach = Coach::where('email', $request->email)->first();
+            if (isset($user)) {
+                if($user->otp != $request->otp)
+                {
+                    $response = [
+                        'status' => 422,
+                        'message' => "Invalid OTP",
+                    ];
+                }
+                else
+                {
+                    $user->otp = null;
+                    $user->save();
+                    $token = $user->createToken("authToken")->accessToken;
+                    $user['role'] = "Admin";
+                    $response = [
+                        'status' => 200,
+                        'message' => "Login Successfully",
+                        'user' => $user,
+                        'token' => $token,
+                    ];
+                }
+            }
+            else if (isset($coach)) {
+                if($coach->otp != $request->otp)
+                {
+                    $response = [
+                        'status' => 422,
+                        'message' => "Invalid OTP",
+                    ];
+                }
+                else
+                {
+                    $coach->otp = null;
+                    $coach->save();
+                    $token = $coach->createToken("coach authToken")->accessToken;
+                    $coach['role'] = "Coach";
+                    $response = [
+                        'status' => 200,
+                        'message' => "Login Successfully",
+                        'user' => $coach,
+                        'token' => $token,
+                    ];
+                }
+            }
+            else {
+                $response = [
+                    'status' => 422,
+                    'message' => "Invalid Email",
+                ];
+            }
+        }
+        return response($response, $response["status"]);
+    }
+
+    public function changePassword(Request $request)
+    {
+        $rules = array(
+            'old_password' => 'required',
+            'new_password' => 'required|min:6|confirmed',
+        );
+        $validation = Validator::make($request->all(), $rules);
+
+        if ($validation->fails()) {
+            $response = [
+                "status" => 422,
+                "message" =>  $validation->errors()->first(),
+            ];
+            return response($response, $response["status"]);
+        }
+
+        $role = $request->role;
+
+        if($role == 'Admin')
+        {
+            $admin = Admin::find(Auth::guard(strtolower($role))->user()->id);
+
+            if ($admin) {
+
+                if (!Hash::check($request->old_password, $admin->password)) {
+                    $response = [
+                        "status" => 422,
+                        "message" =>  'Wrong Old Password!',
+                    ];
+                    return response($response, $response["status"]);
+                }
+
+                $admin->password = $request->new_password;
+                $admin->save();
+
+                $response = [
+                    "status" => 200,
+                    "message" =>  'Password Change Successfully',
+                ];
+            } else {
+                $response = [
+                    "status" => 422,
+                    "message" =>  'User Not Found',
+                ];
+            }
+        }
+        else
+        {
+            $coach = Coach::find(Auth::guard(strtolower($role))->user()->id);
+
+            if ($coach) {
+
+                if (!Hash::check($request->old_password, $coach->password)) {
+                    $response = [
+                        "status" => 422,
+                        "message" =>  'Invalid Password!',
+                    ];
+                    return response($response, $response["status"]);
+                }
+
+                $coach->password = $request->new_password;
+                $coach->save();
+
+                $response = [
+                    "status" => 200,
+                    "message" =>  'Password Change Successfully',
+                ];
+            } else {
+                $response = [
+                    "status" => 422,
+                    "message" =>  'User Not Found',
+                ];
+            }
+        }
+
+        return response($response, $response["status"]);
+    }
+    public function logout(Request $request)
+    {
+        $role = $request->role;
+        $user = Auth::guard(strtolower($role))->user();
+        $token = $user->token();
+        $token->revoke();
+        $response = ['status' => 200, 'message' => 'You have been successfully logged out!'];
+        return response($response, 200);
+    }
+    public function getMyProfile(Request $request)
+    {
+        $role = $request->role;
+        $current_user  = Auth::guard(strtolower($role))->id();
+        if($role == "Admin")
+        {
+            $user = Admin::find($current_user);
+            if (isset($user)) {
+
+                ($user->is_active == 1) ? $user->status = "Active" : $user->status  = "Inactive";
+                $user['role'] = "Admin";
+                $response = [
+                    "status" => 200,
+                    "message" => "My Profile Fetched",
+                    "user" => $user
+                ];
+            } else {
+                $response = [
+                    "status" => 422,
+                    "message" => "User Not Found",
+                ];
+            }
+        }
+        else
+        {
+            $user = Coach::find($current_user);
+            if (isset($user)) {
+
+                ($user->is_active == 1) ? $user->status = "Active" : $user->status  = "Inactive";
+                $user['role'] = "Coach";
+                $response = [
+                    "status" => 200,
+                    "message" => "My Profile Fetched",
+                    "user" => $user
+                ];
+            } else {
+                $response = [
+                    "status" => 422,
+                    "message" => "User Not Found",
+                ];
+            }
+        }
+        return response($response, $response["status"]);
+    }
+    public function updateProfile(Request $request)
+    {
+        $role = $request->role;
+        if($role == "Admin")
+        {
+            $rules = array(
+                'name' => 'string|max:255',
+                'phone' => 'unique:admins,phone,' . Auth::guard(strtolower($role))->user()->id,
+                'profile_image' => 'image',
+
+            );
+            $validation = Validator::make($request->all(), $rules);
+            if ($validation->fails()) {
+                $response = [
+                    "status" => 422,
+                    "message" => $validation->errors()->first(),
+                    "errors" => $validation->errors()
+                ];
+            } else {
+
+                $user = Admin::find(Auth::guard(strtolower($role))->user()->id);
+                if (isset($user)) {
+                    $before = basename($user->profile_image);
+                    $user->fill($request->except(['email','role']));
+
+                    if (isset($request->profile_image)) {
+                        $filename   = time() . rand(111, 699) . '.' . $request->profile_image->getClientOriginalExtension();
+                        $file = Helper::uploadedImage("upload/admin_profiles/", $filename, $request->profile_image, $before);
+                        $user->profile_image = $file;
+                    }
+                    $user->save();
+                    $user['role'] = $role;
+                    $response = [
+                        "status" => 200,
+                        "message" => "Profile Updated Successfully",
+                        "user" => $user
+                    ];
+                } else {
+                    $response = [
+                        "status" => 422,
+                        "message" => "User Not Found",
+                    ];
+                }
+            }
+        }
+        else
+        {
+            $rules = array(
+                'name' => 'string|max:255',
+                'phone' => 'unique:coaches,phone,' . Auth::guard(strtolower($role))->user()->id,
+                'profile_image' => 'image',
+
+            );
+            $validation = Validator::make($request->all(), $rules);
+            if ($validation->fails()) {
+                $response = [
+                    "status" => 422,
+                    "message" => $validation->errors()->first(),
+                    "errors" => $validation->errors()
+                ];
+            } else {
+
+                $user = Coach::find(Auth::guard(strtolower($role))->user()->id);
+                if (isset($user)) {
+                    $before = basename($user->profile_image);
+                    $user->fill($request->except(['email','role']));
+
+                    if (isset($request->profile_image)) {
+                        $filename   = time() . rand(111, 699) . '.' . $request->profile_image->getClientOriginalExtension();
+                        $file = Helper::uploadedImage("upload/coach_profiles/", $filename, $request->profile_image, $before);
+                        $user->profile_image = $file;
+                    }
+                    $user->save();
+                    $user['role'] = $role;
+                    $response = [
+                        "status" => 200,
+                        "message" => "Profile Updated Successfully",
+                        "user" => $user
+                    ];
+                } else {
+                    $response = [
+                        "status" => 422,
+                        "message" => "User Not Found",
+                    ];
+                }
+            }
+        }
+
+        return response($response, $response["status"]);
+    }
+
+    public function sendForgotOtp(Request $request)
+    {
+        $rules = array(
+            'email' => 'required|email:filter',
+        );
+        $validation = Validator::make($request->all(), $rules);
+
+        if ($validation->fails()) {
+            $response = [
+                "status" => 422,
+                "message" =>  $validation->errors()->first(),
+            ];
+            return response($response, $response["status"]);
+        }
+
+        $otp = rand(000000,999999);
+        $user = Admin::where('email',$request->email)->first();
+        $coach = Coach::where('email',$request->email)->first();
+        if(isset($user))
+        {
+            $user->otp = $otp;
+            $user->save();
+            $response = [
+                "status" => 200,
+                "message" => "Otp Send Successfully"
+            ];
+        }
+        else if($coach)
+        {
+            $coach->otp = $otp;
+            $coach->save();
+            $response = [
+                "status" => 200,
+                "message" => "Otp Send Successfully"
+            ];
+        }
+        else
+        {
+            $response = [
+                "status" => 422,
+                "message" => "User Not Found"
+            ];
+        }
+
+        return response($response, $response["status"]);
+    }
+
+    public function forgotPassword(Request $request)
+    {
+        $role = $request->role;
+        if($role == "Admin")
+        {
+            $rules = array(
+                'email' => 'required|exists:admins,email',
+                'otp' => 'required',
+                'password' => 'required|min:4|confirmed',
+            );
+            $validation = Validator::make($request->all(), $rules);
+
+            if ($validation->fails()) {
+                $response = [
+                    "status" => 422,
+                    "message" =>  $validation->errors()->first(),
+                ];
+                return response($response, $response["status"]);
+            }
+
+            $user = Admin::where('email',$request->email)->first();
+            if(isset($user))
+            {
+                if($user->otp == $request->otp)
+                {
+                    $user->password = $request->password;
+                    $user->otp = null;
+                    $user->save();
+                    $response = [
+                        "status" => 200,
+                        "message" => "Password Change Successfully"
+                    ];
+                }
+                else
+                {
+                    $response = [
+                        "status" => 422,
+                        "message" =>  "Invalid Otp",
+                    ];
+                }
+            }
+            else
+            {
+                $response = [
+                    "status" => 422,
+                    "message" =>  "User Not Found",
+                ];
+            }
+        }
+        else
+        {
+            $rules = array(
+                'email' => 'required|exists:coaches,email',
+                'otp' => 'required',
+                'password' => 'required|min:4|confirmed',
+            );
+            $validation = Validator::make($request->all(), $rules);
+
+            if ($validation->fails()) {
+                $response = [
+                    "status" => 422,
+                    "message" =>  $validation->errors()->first(),
+                ];
+                return response($response, $response["status"]);
+            }
+
+            $user = Coach::where('email',$request->email)->first();
+            if(isset($user))
+            {
+                if($user->otp == $request->otp)
+                {
+                    $user->password = $request->password;
+                    $user->otp = null;
+                    $user->save();
+                    $response = [
+                        "status" => 200,
+                        "message" => "Password Change Successfully"
+                    ];
+                }
+                else
+                {
+                    $response = [
+                        "status" => 422,
+                        "message" =>  "Invalid Otp",
+                    ];
+                }
+            }
+            else
+            {
+                $response = [
+                    "status" => 422,
+                    "message" =>  "User Not Found",
+                ];
+            }
+        }
+
+
+        return response($response, $response["status"]);
+    }
+
+    public function getResetPassword(Request $request,$token)
+    {
+       $admin = Admin::where('reset_token',$token)->first();
+       $coach = Coach::where('reset_token',$token)->first();
+       if($admin) {
+            return view('resetPasswordForm')->with(['token'=>$token,'type'=>'admin']);
+        } else if($coach)
+        {
+            return view('resetPasswordForm')->with(['token'=>$token,'type'=>'admin']);
+        } else {
+            abort(403, 'Expired Token.');
+        }
+    }
+    public function resetPassword(Request $request,$token)
+    {
+        $request->validate([
+            'password' => 'required|min:6|confirmed',
+        ]);
+
+        $admin = Admin::where("reset_token",$token)->first();
+        $coach = Coach::where("reset_token",$token)->first();
+        if (isset($admin)) {
+            $admin->password = $request->password;
+            $admin->reset_token = null;
+            $admin->save();
+
+            return view('success');
+        }
+        else if($coach)
+        {
+            $coach->password = $request->password;
+            $coach->reset_token = null;
+            $coach->save();
+
+            return view('success');
+        }
+        else {
+            abort(403, 'Expired Token.');
+        }
+    }
+    public function sendResetPasswordLink(Request $request)
+    {
+        $rules = array(
+            'email' => 'required|email:filter',
+        );
+        $validation = Validator::make($request->all(), $rules);
+        if ($validation->fails()) {
+            $response = [
+                "status" => 422,
+                "message" =>  $validation->errors()->first(),
+            ];
+            return response($response, $response["status"]);
+        }
+        $user = Admin::where('email',$request->email)->first();
+        $coach = Coach::where('email',$request->email)->first();
+        if(isset($user))
+        {
+            $user->reset_token = Helper::generateToken();
+            $user->save();
+            if ($user) {
+                Mail::to($user->email)->send(new ResetPasswordMail($user,'admin'));
+            }
+            $response = [
+                'status' => 200,
+                'message' => 'Link send Successfully',
+                'link' => route('getResetPassword.admin', ['token' => $user->reset_token])
+            ];
+        }
+        else if(isset($coach)){
+            $coach->reset_token = Helper::generateToken();
+            $coach->save();
+            if ($coach) {
+                Mail::to($coach->email)->send(new ResetPasswordMail($coach,'admin'));
+            }
+            $response = [
+                'status' => 200,
+                'message' => 'Link send Successfully',
+                // 'link' => route('getResetPassword.admin', ['token' => $coach->reset_token])
+            ];
+        }
+        else
+        {
+            $response = [
+                'status' => 422,
+                'message' => 'User not Found!'
+            ];
+        }
+
+        return response($response, $response["status"]);
+
+    }
+
+    public function getDashboardStats(Request $request)
+    {
+        $now = Carbon::now()->toDateString();
+        $role = $request->role;
+        $current_user  = Auth::guard(strtolower($role))->id();
+        if($role == "Admin")
+        {
+                $response = [
+                    "status" => 200,
+                    "message" => "Dashboard Stats Fetched Successfully",
+                ];
+                $response['total_organizations'] = Organization::count();
+                $response['total_users'] = User::whereNull('organization_id')->count();
+                $response['total_employees'] = User::whereNotNull('organization_id')->count();
+                $response['total_coaches'] = Coach::count();
+                $response['total_challenges'] = Challenge::count();
+                $response['current_challenges'] = Challenge::with('organization','coach','coaches','upload_by:id,first_name,last_name,profile_image')->select('*')
+                ->selectRaw('DATE_ADD(start_date, INTERVAL duration DAY) AS end_date')
+                ->where('start_date', '<=', $now)
+                ->whereRaw('DATE_ADD(start_date, INTERVAL duration DAY) >= ?', [$now])->count();
+                $response['total_videos'] = Video::count();
+                $response['total_exercises'] = Exercise::count();
+                $response['total_workouts'] = Workout::count();
+                $response['total_plans'] = Plan::count();
+                $response['new_submissions'] = OrganizationSubmission::where('status', 'Not Uploaded')
+                ->whereHas('organization')
+                ->count();
+                $response['new_signup_users'] = User::whereDate('created_at',$now)
+                ->where('first_login',0)
+                ->whereNull('organization_id')
+                ->count();
+        }
+        else
+        {
+                $response = [
+                    "status" => 200,
+                    "message" => "Dashboard Stats Fetched Successfully",
+                ];
+                $response['total_organizations'] = Organization::whereHas('coaches',function($query) use ($current_user){
+                    $query->where('coach_id',$current_user);
+                })->count();
+                $response['total_users'] = User::whereNull('organization_id')->whereHas('coach',function($query) use ($current_user){
+                    $query->where('coach_id',$current_user);
+                })->count();
+                $response['total_employees'] = User::whereNotNull('organization_id')->whereHas('organization.coaches',function($query) use ($current_user){
+                    $query->where('coach_id',$current_user);
+                })->count();
+                $response['total_challenges'] = Challenge::whereHas('coaches',function($query) use ($current_user){
+                    $query->where('coaches.id',$current_user);
+                })->count();
+                $response['current_challenges'] = Challenge::with('organization','coach','coaches','upload_by:id,first_name,last_name,profile_image')->select('*')
+                ->selectRaw('DATE_ADD(start_date, INTERVAL duration DAY) AS end_date')
+                ->where('start_date', '<=', $now)
+                ->whereRaw('DATE_ADD(start_date, INTERVAL duration DAY) >= ?', [$now])
+                ->whereHas('coaches',function($query) use ($current_user){
+                    $query->where('coaches.id',$current_user);
+                })->count();
+                $response['total_videos'] = Video::where('uploader','Coach')->where('uploaded_by',$current_user)->count();
+                $response['total_exercises'] = Exercise::where('uploader','Coach')->where('uploaded_by',$current_user)->count();
+                $response['total_workouts'] = Workout::where('uploader','Coach')->where('uploaded_by',$current_user)->count();
+                $response['total_plans'] = Plan::where('uploader','Coach')->where('uploaded_by',$current_user)->count();
+        }
+        return response($response, $response["status"]);
+    }
+
+     //Site Info
+
+     public function updateSiteInfo(Request $request)
+     {
+         $site_info = SiteInfo::first();
+         if (!isset($site_info)) {
+             $site_info = SiteInfo::create($request->toArray());
+         } else {
+             $site_info->replicate();
+             $site_info->fill($request->toArray());
+             $site_info->save();
+         }
+
+         $response = [
+             "status" => 200,
+             "message" => "Site Info Updated Successfully!",
+             "site_info" => $site_info
+         ];
+         return response($response, $response["status"]);
+     }
+
+     public function getSiteInfo(Request $request)
+     {
+         $site_info = SiteInfo::first();
+
+         if (!isset($site_info)) {
+             $site_info = SiteInfo::create([
+                 'privacy_policy' => '<p>Lorem ipsum dolor sit amet, <strong>consectetur adipiscing elit</strong>. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>',
+                 'tnc' => '<p>Lorem ipsum dolor sit amet, <strong>consectetur adipiscing elit</strong>. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.</p>',
+             ]);
+         }
+         $response = [
+             "status" => 200,
+             "message" => "Site Info Fetch Successfully",
+             "site_info" => $site_info
+         ];
+
+         return response($response, $response["status"]);
+     }
+
+       //Faqs
+   public function addFaq(Request $request)
+   {
+       $rules = array(
+           'question' => 'required|string',
+           'answer' => 'required|string',
+
+       );
+       $validation = Validator::make($request->all(), $rules);
+       if ($validation->fails()) {
+           $response = [
+               "status" => 422,
+               "message" => $validation->errors()->first(),
+               "errors" => $validation->errors()
+           ];
+           return response($response, $response["status"]);
+       }
+
+       $faq = Faq::create($request->toArray());
+
+       $response = [
+           "status" => 200,
+           "message" => "Faq Added Successfully",
+           "faq" => $faq
+       ];
+
+       return response($response, $response["status"]);
+   }
+   public function updateFaq(Request $request, $id)
+   {
+       $rules = array(
+           'question' => 'string',
+           'answer' => 'string',
+
+       );
+       $validation = Validator::make($request->all(), $rules);
+       if ($validation->fails()) {
+           $response = [
+               "status" => 422,
+               "message" => $validation->errors()->first(),
+               "errors" => $validation->errors()
+           ];
+          return response($response, $response["status"]);
+
+       }
+
+       $faq = Faq::find($id);
+       if (isset($faq)) {
+           $faq->fill($request->toArray());
+           $faq->save();
+           $response = [
+               "status" => 200,
+               "message" => "Faq Updated Successfully",
+               "faq" => $faq
+           ];
+       } else {
+           $response = [
+               "status" => 422,
+               "message" => "Faq Not Found",
+           ];
+       }
+
+       return response($response, $response["status"]);
+   }
+
+   public function getFaqs(Request $request)
+   {
+       $faqs = Faq::latest()->get();
+
+       $response = [
+           "status" => 200,
+           "message" => "Faq Fetched Successfully",
+           "faqs" => $faqs
+       ];
+
+       return response($response, $response["status"]);
+   }
+   public function getFaq(Request $request, $id)
+   {
+       $faq = Faq::find($id);
+       if (isset($faq)) {
+           $response = [
+               "status" => 200,
+               "message" => "Faq Fetched Successfully",
+               "faq" => $faq
+           ];
+       } else {
+           $response = [
+               "status" => 422,
+               "message" => "Faq Not Found",
+           ];
+       }
+
+       return response($response, $response["status"]);
+   }
+   public function deleteFaq(Request $request, $id)
+   {
+       $faq = Faq::find($id);
+       if (isset($faq)) {
+           $faq->delete();
+           $response = [
+               "status" => 200,
+               "message" => "Faq Deleted Successfully",
+           ];
+       } else {
+           $response = [
+               "status" => 422,
+               "message" => "Faq Not Found",
+           ];
+       }
+
+       return response($response, $response["status"]);
+   }
+
+   public function sendUserCreds(Request $request, $id)
+    {
+        $role = $request->role;
+        $admin = Auth::guard(strtolower($role))->user();
+
+        $user = User::find($id);
+        if (isset($user)) {
+            try {
+                // SECURITY: Password reset link should be sent instead of plaintext password
+                $credential = [
+                    'type' => "User",
+                    'name' => $user->first_name.' '.$user->last_name,
+                    'email' => $user->email,
+                ];
+                Mail::to($user->email)
+                    ->cc($admin->email)
+                    ->send(new SendCredential($credential));
+
+                if (Mail::failures()) {
+                    $response = [
+                        "status" => 422,
+                        "message" => "Failed to send credentials to the user.",
+                    ];
+                } else {
+                    $response = [
+                        "status" => 200,
+                        "message" => "Credentials sent to the user.",
+                    ];
+                }
+            } catch (\Exception $e) {
+                $response = [
+                    "status" => 422,
+                    "message" => "Error sending email: " . $e->getMessage(),
+                ];
+            }
+        } else {
+            $response = [
+                "status" => 422,
+                "message" => "User not found.",
+            ];
+        }
+
+        return response()->json($response);
+    }
+
+
+    public function getActivityLogs(Request $request)
+    {
+        $logs = ActivityLog::with('updated_by')->latest()->get();
+        return response([
+            "status" => 200,
+            'message' => 'Activity LOg Fetced',
+            'logs' => $logs
+        ], 200);
+    }
+
+    public function checkDeletion(Request $request,$id)
+    {
+        if(!$request->filled('type'))
+        {
+            $response = [
+                "status" => 422,
+                "message" => "Type is Required"
+            ];
+
+            return response($response,$response['status']);
+        }
+        $type = $request->query('type');
+        $data = null;
+        if($type == "video")
+        {
+            $data = Video::select('id','video_title as title')->withCount([
+                'exercises_data as exercise_count' => function ($query) {
+                    $query->select(DB::raw('count(distinct exercises.id)'));
+                }
+            ])->with([
+                'exercises_data' => function ($query) {
+                    $query->select('exercises.id', 'exercises.title', 'exercise_videos.video_id')
+                          ->groupBy('exercises.id', 'exercises.title', 'exercise_videos.video_id');
+                }
+            ])->find($id);
+        }
+        else if($type == "exercise")
+        {
+            $data = Exercise::select('id','title')->withCount([
+                'workouts as workout_count' => function ($query) {
+                    $query->select(DB::raw('count(distinct workouts.id)'));
+                }
+            ])
+            ->with([
+                'workouts' => function ($query) {
+                    $query->select('workouts.id', 'workouts.title', 'workout_exercises.exercise_id')
+                          ->groupBy('workouts.id', 'workouts.title', 'workout_exercises.exercise_id');
+                }
+            ])->find($id);
+        }
+        else if($type == "workout")
+        {
+            $data = Workout::select('id','title')->withCount([
+                'plans_data as plan_count' => function ($query) {
+                    $query->select(DB::raw('count(distinct plans.id)'));
+                }
+            ])->with([
+                'plans_data' => function ($query) {
+                    $query->select('plans.id', 'plans.title', 'plan_workouts.workout_id')
+                          ->groupBy('plans.id', 'plans.title', 'plan_workouts.workout_id');
+                }
+            ])->find($id);
+        }
+        else
+        {
+            $response = [
+                "status" => 422,
+                "message" => "Invalid type"
+            ];
+
+            return response($response,$response['status']);
+        }
+
+
+        $typeName = ucfirst($type);
+        if(isset($data))
+        {
+            $response = [
+                "status" => 200,
+                "message" => "$typeName Fetched Successfully",
+                "data" => $data
+            ];
+
+        }
+        else
+        {
+            $response = [
+                "status" => 422,
+                "message" => "$typeName Not Found!",
+            ];
+        }
+
+        return response($response,$response['status']);
+    }
+
+    public function getPerformanceMetrics(Request $request)
+    {
+        $role = $request->role;
+        $current_user = Auth::guard(strtolower($role))->id();
+        
+        // Get database table sizes
+        $tableSizes = DB::select("
+            SELECT 
+                table_name,
+                ROUND(((data_length + index_length) / 1024 / 1024), 2) AS size_mb,
+                table_rows as row_count
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE()
+            AND table_name IN ('users', 'challenges', 'workouts', 'exercises', 'videos', 'plans', 'organizations', 'coaches', 'activity_logs', 'notifications')
+            ORDER BY (data_length + index_length) DESC
+            LIMIT 10
+        ");
+        
+        // Get database connection info
+        $maxConnections = DB::select("SHOW VARIABLES LIKE 'max_connections'");
+        $currentConnections = DB::select("SHOW STATUS LIKE 'Threads_connected'");
+        
+        // Get database size
+        $dbSize = DB::select("
+            SELECT 
+                ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS size_mb
+            FROM information_schema.tables 
+            WHERE table_schema = DATABASE()
+        ");
+        
+        // System load metrics (simplified - actual metrics would require server monitoring)
+        // For now, return placeholder data that matches frontend interface
+        $response = [
+            "status" => 200,
+            "message" => "Performance metrics fetched successfully",
+            "table_sizes" => array_map(function($table) {
+                return [
+                    'table_name' => $table->table_name,
+                    'size_mb' => (float) $table->size_mb,
+                    'row_count' => (int) $table->row_count,
+                ];
+            }, $tableSizes),
+            "database_connections" => [
+                "current" => isset($currentConnections[0]) ? (int) $currentConnections[0]->Value : 0,
+                "max" => isset($maxConnections[0]) ? (int) $maxConnections[0]->Value : 151,
+            ],
+            "database_size_mb" => isset($dbSize[0]) ? (float) $dbSize[0]->size_mb : 0,
+            "system_load" => [
+                "cpu_percent" => 0, // Placeholder - requires system monitoring
+                "memory_percent" => 0, // Placeholder - requires system monitoring
+                "disk_percent" => 0, // Placeholder - requires system monitoring
+            ]
+        ];
+
+        return response($response, $response["status"]);
+    }
+
+    /**
+     * Track failed login attempts for security.
+     */
+    private function trackFailedLogin(string $email): void
+    {
+        $key = 'failed_login_' . md5($email);
+        $attempts = cache()->get($key, 0);
+        cache()->put($key, $attempts + 1, now()->addMinutes(30));
+
+        // Log failed attempt
+        Log::warning('Failed admin login attempt', [
+            'email' => $email,
+            'ip' => request()->ip(),
+            'attempts' => $attempts + 1
+        ]);
+
+        // Lock account after 5 failed attempts
+        if ($attempts >= 4) {
+            $user = Admin::where('email', $email)->first();
+            if ($user) {
+                $user->is_active = 0;
+                $user->save();
+                Log::error('Admin account locked due to failed login attempts', [
+                    'email' => $email,
+                    'ip' => request()->ip()
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Reset failed login attempts on successful login.
+     */
+    private function resetFailedLogins(string $email): void
+    {
+        $key = 'failed_login_' . md5($email);
+        cache()->forget($key);
+    }
+}
