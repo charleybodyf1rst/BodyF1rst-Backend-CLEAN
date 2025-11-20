@@ -437,4 +437,164 @@ class PassioNutritionController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Recognize food from image using Passio AI
+     * POST /api/passio/recognize-food
+     *
+     * Legacy compatibility endpoint for frontend calls to /passio/recognize-food.php
+     */
+    public function recognizeFood(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'image' => 'required|image|mimes:jpg,jpeg,png|max:10240', // 10MB max
+            'user_id' => 'nullable|exists:users,id'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Upload image to temporary storage
+            $imagePath = $request->file('image')->store('temp/food-recognition', 'public');
+            $fullPath = storage_path('app/public/' . $imagePath);
+
+            // Use Passio AI to recognize food from image
+            // This would call the Passio Nutrition AI API's image recognition endpoint
+            $recognizedFoods = $this->passioClient->recognizeFoodFromImage($fullPath);
+
+            if (!$recognizedFoods) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to recognize food from image'
+                ], 500);
+            }
+
+            // Clean up temporary file
+            @unlink($fullPath);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'recognized_foods' => $recognizedFoods,
+                    'count' => count($recognizedFoods),
+                    'confidence_threshold' => 0.7
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error recognizing food from image', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Internal server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate meal plan for user
+     * POST /api/passio/generate-meal-plan
+     *
+     * Legacy compatibility endpoint for frontend calls to /passio/generate-meal-plan.php
+     */
+    public function generateMealPlan(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|exists:users,id',
+            'days' => 'nullable|integer|min:1|max:30',
+            'diet_type' => 'nullable|string|in:balanced,low-carb,high-protein,vegetarian,vegan,keto,paleo',
+            'calorie_target' => 'nullable|integer|min:1200|max:5000',
+            'meals_per_day' => 'nullable|integer|min:3|max:6',
+            'allergies' => 'nullable|array',
+            'dislikes' => 'nullable|array',
+            'preferences' => 'nullable|array'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $user = User::findOrFail($request->input('user_id'));
+            $days = $request->input('days', 7);
+
+            $planParams = [
+                'user_id' => $user->id,
+                'days' => $days,
+                'diet_type' => $request->input('diet_type', 'balanced'),
+                'calorie_target' => $request->input('calorie_target', $this->calculateCalorieTarget($user)),
+                'meals_per_day' => $request->input('meals_per_day', 3),
+                'allergies' => $request->input('allergies', []),
+                'dislikes' => $request->input('dislikes', []),
+                'preferences' => $request->input('preferences', [])
+            ];
+
+            // Generate meal plan using Passio AI
+            $mealPlanData = $this->passioClient->generateMealPlan($planParams);
+
+            if (!$mealPlanData) {
+                Log::error('Failed to generate meal plan from Passio API');
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to generate meal plan'
+                ], 500);
+            }
+
+            // Store meal plan in database
+            $mealPlan = MealPlan::create([
+                'user_id' => $user->id,
+                'passio_plan_id' => $mealPlanData['id'] ?? uniqid('plan_'),
+                'name' => $mealPlanData['name'] ?? "{$days}-Day {$planParams['diet_type']} Plan",
+                'description' => $mealPlanData['description'] ?? '',
+                'total_calories' => $mealPlanData['totalCalories'] ?? $planParams['calorie_target'],
+                'macros' => $mealPlanData['macros'] ?? [],
+                'meals' => $mealPlanData['meals'] ?? [],
+                'preferences' => $planParams,
+                'start_date' => now()->toDateString(),
+                'end_date' => now()->addDays($days - 1)->toDateString()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Meal plan generated successfully',
+                'data' => [
+                    'plan_id' => $mealPlan->id,
+                    'passio_plan_id' => $mealPlan->passio_plan_id,
+                    'name' => $mealPlan->name,
+                    'description' => $mealPlan->description,
+                    'days' => $days,
+                    'meals' => $mealPlan->meals,
+                    'total_calories' => $mealPlan->total_calories,
+                    'macros' => $mealPlan->macros,
+                    'start_date' => $mealPlan->start_date,
+                    'end_date' => $mealPlan->end_date
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error generating meal plan', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Internal server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

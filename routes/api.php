@@ -662,6 +662,11 @@ Route::group(['namespace' => 'Customer', 'prefix' => 'customer', 'as' => 'custom
             Route::get('/analytics/client-retention', [\App\Http\Controllers\Coach\AnalyticsController::class, 'getClientRetention'])->name('getCoachRetention.api');
         });
 
+        // ========== MESSAGING & CONVERSATIONS ROUTES (Legacy Compatibility) ==========
+        // Legacy endpoints for frontend calls to /conversations.php and /index.php
+        Route::get('/conversations', [\App\Http\Controllers\Coach\MessageController::class, 'getConversations'])->name('getConversations.api');
+        Route::put('/messages/update', [\App\Http\Controllers\Coach\MessageController::class, 'updateMessage'])->name('updateMessage.api');
+
         // ========== NEW: SOCIAL FEATURES ROUTES ==========
         Route::prefix('social')->group(function() {
             // Friends Management
@@ -927,9 +932,14 @@ Route::prefix('passio')->middleware(['throttle.passio'])->group(function () {
     Route::get('/fetch-meal-plan', [\App\Http\Controllers\PassioNutritionController::class, 'fetchMealPlan']);
     Route::post('/sync-nutrition', [\App\Http\Controllers\PassioNutritionController::class, 'syncNutrition']);
     Route::get('/search-foods', [\App\Http\Controllers\PassioNutritionController::class, 'searchFoods']);
+    Route::post('/search-food', [\App\Http\Controllers\PassioNutritionController::class, 'searchFoods']); // Legacy compatibility
     Route::get('/food-by-barcode/{barcode}', [\App\Http\Controllers\PassioNutritionController::class, 'getFoodByBarcode']);
     Route::get('/daily-nutrition/{userId}/{date}', [\App\Http\Controllers\PassioNutritionController::class, 'getDailyNutrition']);
     Route::post('/voice-log-food', [\App\Http\Controllers\PassioNutritionController::class, 'voiceLogFood']);
+
+    // New endpoints for legacy compatibility
+    Route::post('/recognize-food', [\App\Http\Controllers\PassioNutritionController::class, 'recognizeFood']);
+    Route::post('/generate-meal-plan', [\App\Http\Controllers\PassioNutritionController::class, 'generateMealPlan']);
 });
 
 // Passio Advanced Features - CAMERA & Complete Integration
@@ -1362,6 +1372,10 @@ Route::middleware(['auth:api'])->group(function () {
         Route::post('/unlock', [\App\Http\Controllers\AvatarController::class, 'unlockItem']);
         Route::post('/equip', [\App\Http\Controllers\AvatarController::class, 'equipItem']);
         Route::post('/unequip', [\App\Http\Controllers\AvatarController::class, 'unequipItem']);
+
+        // Social sharing rewards
+        Route::post('/share/reward/claim', [\App\Http\Controllers\AvatarController::class, 'claimSocialShareReward']);
+        Route::get('/share/stats', [\App\Http\Controllers\AvatarController::class, 'getSocialShareStats']);
     });
 
     // Video Streaming - Secure signed URLs with access control
@@ -1435,6 +1449,32 @@ Route::middleware(['auth:api'])->prefix('ai')->group(function () {
         Route::post('/draft', [\App\Http\Controllers\AiAssistantController::class, 'draftMessage'])
             ->name('ai.messages.draft');
     });
+
+    // Legacy AI Coach Endpoints (for backward compatibility with frontend)
+    Route::post('/process-message', [\App\Http\Controllers\AiAssistantController::class, 'processMessage'])
+        ->name('ai.process-message');
+    Route::post('/save-conversation', [\App\Http\Controllers\AiAssistantController::class, 'saveConversation'])
+        ->name('ai.save-conversation');
+    Route::get('/get-chat-history', [\App\Http\Controllers\AiAssistantController::class, 'getChatHistory'])
+        ->name('ai.get-chat-history');
+
+    // AI Scheduling Endpoints
+    Route::post('/schedule-workout', [\App\Http\Controllers\AiAssistantController::class, 'scheduleWorkout'])
+        ->name('ai.schedule-workout');
+    Route::post('/schedule-meal', [\App\Http\Controllers\AiAssistantController::class, 'scheduleMeal'])
+        ->name('ai.schedule-meal');
+    Route::post('/schedule-task', [\App\Http\Controllers\AiAssistantController::class, 'scheduleTask'])
+        ->name('ai.schedule-task');
+    Route::post('/parse-scheduling-command', [\App\Http\Controllers\AiAssistantController::class, 'parseSchedulingCommand'])
+        ->name('ai.parse-scheduling-command');
+    Route::post('/process-workout-command', [\App\Http\Controllers\AiAssistantController::class, 'processWorkoutCommand'])
+        ->name('ai.process-workout-command');
+
+    // Calendar Integration
+    Route::post('/sync-apple-calendar', [\App\Http\Controllers\AiAssistantController::class, 'syncAppleCalendar'])
+        ->name('ai.sync-apple-calendar');
+    Route::get('/get-scheduled-events', [\App\Http\Controllers\AiAssistantController::class, 'getScheduledEvents'])
+        ->name('ai.get-scheduled-events');
 });
 
 /*

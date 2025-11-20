@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 
 /**
  * AI Assistant Controller
@@ -515,5 +516,412 @@ class AiAssistantController extends Controller
                 ],
             ],
         ];
+    }
+
+    /**
+     * Process AI message (legacy endpoint for compatibility)
+     * POST /api/ai/process-message
+     */
+    public function processMessage(Request $request)
+    {
+        // Route to chat endpoint
+        return $this->chat($request);
+    }
+
+    /**
+     * Save conversation history
+     * POST /api/ai/save-conversation
+     */
+    public function saveConversation(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required|integer|exists:users,id',
+            'sender' => 'required|in:user,coach',
+            'message' => 'required|string',
+            'message_type' => 'nullable|in:text,action,confirmation',
+            'metadata' => 'nullable|json',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $conversation = \DB::table('ai_conversations')->insert([
+                'user_id' => $request->user_id,
+                'sender' => $request->sender,
+                'message' => $request->message,
+                'message_type' => $request->message_type ?? 'text',
+                'metadata' => $request->metadata,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Conversation saved successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Save Conversation Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to save conversation',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get chat history
+     * GET /api/ai/get-chat-history
+     */
+    public function getChatHistory(Request $request)
+    {
+        $limit = $request->get('limit', 50);
+        $userId = $request->get('user_id', Auth::id());
+
+        try {
+            $messages = \DB::table('ai_conversations')
+                ->where('user_id', $userId)
+                ->orderBy('created_at', 'desc')
+                ->limit($limit)
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'messages' => $messages,
+                'count' => $messages->count(),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get Chat History Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve chat history',
+            ], 500);
+        }
+    }
+
+    /**
+     * Schedule workout via AI
+     * POST /api/ai/schedule-workout
+     */
+    public function scheduleWorkout(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'workout_type' => 'required|string',
+            'datetime' => 'required|date',
+            'duration' => 'required|integer|min:5|max:300',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $workout = \DB::table('scheduled_workouts')->insertGetId([
+                'user_id' => Auth::id(),
+                'workout_type' => $request->workout_type,
+                'scheduled_at' => $request->datetime,
+                'duration_minutes' => $request->duration,
+                'status' => 'scheduled',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Workout scheduled successfully',
+                'workout' => [
+                    'id' => $workout,
+                    'workout_type' => $request->workout_type,
+                    'scheduled_at' => $request->datetime,
+                    'duration_minutes' => $request->duration,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Schedule Workout Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to schedule workout',
+            ], 500);
+        }
+    }
+
+    /**
+     * Schedule meal via AI
+     * POST /api/ai/schedule-meal
+     */
+    public function scheduleMeal(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'meal_type' => 'required|in:breakfast,lunch,dinner,snack',
+            'datetime' => 'required|date',
+            'calories' => 'nullable|integer',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $meal = \DB::table('scheduled_meals')->insertGetId([
+                'user_id' => Auth::id(),
+                'meal_type' => $request->meal_type,
+                'scheduled_at' => $request->datetime,
+                'calories' => $request->calories,
+                'status' => 'scheduled',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Meal scheduled successfully',
+                'meal' => [
+                    'id' => $meal,
+                    'meal_type' => $request->meal_type,
+                    'scheduled_at' => $request->datetime,
+                    'calories' => $request->calories,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Schedule Meal Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to schedule meal',
+            ], 500);
+        }
+    }
+
+    /**
+     * Schedule task via AI
+     * POST /api/ai/schedule-task
+     */
+    public function scheduleTask(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'task_name' => 'required|string',
+            'datetime' => 'required|date',
+            'priority' => 'nullable|in:low,medium,high',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try{
+            $task = \DB::table('scheduled_tasks')->insertGetId([
+                'user_id' => Auth::id(),
+                'task_name' => $request->task_name,
+                'scheduled_at' => $request->datetime,
+                'priority' => $request->priority ?? 'medium',
+                'status' => 'pending',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Task scheduled successfully',
+                'task' => [
+                    'id' => $task,
+                    'task_name' => $request->task_name,
+                    'scheduled_at' => $request->datetime,
+                    'priority' => $request->priority ?? 'medium',
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Schedule Task Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to schedule task',
+            ], 500);
+        }
+    }
+
+    /**
+     * Parse natural language scheduling command
+     * POST /api/ai/parse-scheduling-command
+     */
+    public function parseSchedulingCommand(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'command' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            $command = strtolower($request->command);
+            $parsed = [
+                'type' => 'unknown',
+                'datetime' => null,
+                'details' => [],
+            ];
+
+            // Detect scheduling type
+            if (preg_match('/\b(workout|exercise|training)\b/', $command)) {
+                $parsed['type'] = 'workout';
+            } elseif (preg_match('/\b(meal|eat|food|dinner|lunch|breakfast)\b/', $command)) {
+                $parsed['type'] = 'meal';
+            } elseif (preg_match('/\b(task|remind|todo)\b/', $command)) {
+                $parsed['type'] = 'task';
+            }
+
+            // Extract time/date
+            if (preg_match('/\b(tomorrow|today|tonight)\b/', $command, $matches)) {
+                $when = $matches[1];
+                if ($when === 'tomorrow') {
+                    $parsed['datetime'] = now()->addDay()->setTime(9, 0)->toDateTimeString();
+                } elseif ($when === 'today') {
+                    $parsed['datetime'] = now()->setTime(14, 0)->toDateTimeString();
+                } elseif ($when === 'tonight') {
+                    $parsed['datetime'] = now()->setTime(19, 0)->toDateTimeString();
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'parsed' => $parsed,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Parse Scheduling Command Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to parse command',
+            ], 500);
+        }
+    }
+
+    /**
+     * Process workout command
+     * POST /api/ai/process-workout-command
+     */
+    public function processWorkoutCommand(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'command' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        // Route to chat for processing
+        $request->merge(['message' => $request->command]);
+        return $this->chat($request);
+    }
+
+    /**
+     * Sync with Apple Calendar
+     * POST /api/ai/sync-apple-calendar
+     */
+    public function syncAppleCalendar(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'calendar_token' => 'required|string',
+            'user_id' => 'nullable|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        try {
+            // Store calendar sync info
+            \DB::table('calendar_integrations')->updateOrInsert(
+                ['user_id' => Auth::id()],
+                [
+                    'provider' => 'apple',
+                    'token' => $request->calendar_token,
+                    'last_synced_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Apple Calendar synced successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Apple Calendar Sync Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to sync Apple Calendar',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get scheduled events
+     * GET /api/ai/get-scheduled-events
+     */
+    public function getScheduledEvents(Request $request)
+    {
+        $userId = $request->get('user_id', Auth::id());
+        $startDate = $request->get('start_date', now()->toDateString());
+        $endDate = $request->get('end_date', now()->addDays(7)->toDateString());
+
+        try {
+            $events = [
+                'workouts' => \DB::table('scheduled_workouts')
+                    ->where('user_id', $userId)
+                    ->whereBetween('scheduled_at', [$startDate, $endDate])
+                    ->get(),
+                'meals' => \DB::table('scheduled_meals')
+                    ->where('user_id', $userId)
+                    ->whereBetween('scheduled_at', [$startDate, $endDate])
+                    ->get(),
+                'tasks' => \DB::table('scheduled_tasks')
+                    ->where('user_id', $userId)
+                    ->whereBetween('scheduled_at', [$startDate, $endDate])
+                    ->get(),
+            ];
+
+            return response()->json([
+                'success' => true,
+                'events' => $events,
+                'count' => count($events['workouts']) + count($events['meals']) + count($events['tasks']),
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Get Scheduled Events Error', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve events',
+            ], 500);
+        }
     }
 }

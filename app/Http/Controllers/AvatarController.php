@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Models\AvatarItem;
 use App\Models\UserAvatarItem;
 use App\Models\User;
@@ -489,6 +490,184 @@ class AvatarController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update 3D avatar',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
+    }
+
+    /**
+     * Claim social sharing reward
+     * POST /api/avatar/share/reward/claim
+     */
+    public function claimSocialShareReward(Request $request)
+    {
+        try {
+            $user = Auth::guard('admin')->user() ?? Auth::user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            $request->validate([
+                'share_type' => 'required|in:first_share,workout_share,nutrition_share,achievement_share,badge_share,progression_share',
+                'social_share_id' => 'nullable|integer',
+            ]);
+
+            // Get the reward for this share type
+            $reward = \DB::table('social_share_rewards')
+                ->where('share_type', $request->share_type)
+                ->where('is_active', true)
+                ->first();
+
+            if (!$reward) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No reward available for this share type'
+                ], 404);
+            }
+
+            // Check if user has already claimed this reward max times
+            $claimCount = \DB::table('user_reward_claims')
+                ->where('user_id', $user->id)
+                ->where('social_share_reward_id', $reward->id)
+                ->count();
+
+            if ($claimCount >= $reward->max_claims_per_user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Maximum claims reached for this reward'
+                ], 400);
+            }
+
+            \DB::beginTransaction();
+
+            // Create the claim record
+            $claimId = \DB::table('user_reward_claims')->insertGetId([
+                'user_id' => $user->id,
+                'social_share_reward_id' => $reward->id,
+                'social_share_id' => $request->social_share_id,
+                'points_earned' => $reward->points_reward,
+                'items_earned' => $reward->avatar_items_reward,
+                'claimed_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            // Award points
+            if ($reward->points_reward > 0) {
+                \DB::table('users')
+                    ->where('id', $user->id)
+                    ->increment('avatar_points', $reward->points_reward);
+            }
+
+            // Award avatar items
+            if ($reward->avatar_items_reward) {
+                $itemIds = json_decode($reward->avatar_items_reward, true);
+                foreach ($itemIds as $itemId) {
+                    \DB::table('user_avatar_items')->updateOrInsert(
+                        [
+                            'user_id' => $user->id,
+                            'avatar_item_id' => $itemId,
+                        ],
+                        [
+                            'acquired_at' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]
+                    );
+                }
+            }
+
+            \DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Reward claimed successfully',
+                'data' => [
+                    'points_earned' => $reward->points_reward,
+                    'items_earned' => json_decode($reward->avatar_items_reward),
+                    'claim_id' => $claimId,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to claim reward',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 500);
+        }
+    }
+
+    /**
+     * Get social sharing stats
+     * GET /api/avatar/share/stats
+     */
+    public function getSocialShareStats(Request $request)
+    {
+        try {
+            $user = Auth::guard('admin')->user() ?? Auth::user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized'
+                ], 401);
+            }
+
+            // Get all available rewards
+            $availableRewards = \DB::table('social_share_rewards')
+                ->where('is_active', true)
+                ->get();
+
+            // Get user's claims
+            $userClaims = \DB::table('user_reward_claims')
+                ->where('user_id', $user->id)
+                ->select('social_share_reward_id', \DB::raw('COUNT(*) as claim_count'), \DB::raw('SUM(points_earned) as total_points'))
+                ->groupBy('social_share_reward_id')
+                ->get()
+                ->keyBy('social_share_reward_id');
+
+            // Build stats for each reward type
+            $rewardStats = $availableRewards->map(function($reward) use ($userClaims) {
+                $claimed = $userClaims->get($reward->id);
+                $claimCount = $claimed ? $claimed->claim_count : 0;
+
+                return [
+                    'share_type' => $reward->share_type,
+                    'points_reward' => $reward->points_reward,
+                    'avatar_items_reward' => json_decode($reward->avatar_items_reward),
+                    'max_claims' => $reward->max_claims_per_user,
+                    'claims_used' => $claimCount,
+                    'claims_remaining' => max(0, $reward->max_claims_per_user - $claimCount),
+                    'can_claim' => $claimCount < $reward->max_claims_per_user,
+                ];
+            });
+
+            // Get total stats
+            $totalPoints = \DB::table('user_reward_claims')
+                ->where('user_id', $user->id)
+                ->sum('points_earned');
+
+            $totalClaims = \DB::table('user_reward_claims')
+                ->where('user_id', $user->id)
+                ->count();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'total_points_earned' => $totalPoints ?? 0,
+                    'total_claims' => $totalClaims,
+                    'rewards' => $rewardStats,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get share stats',
                 'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
