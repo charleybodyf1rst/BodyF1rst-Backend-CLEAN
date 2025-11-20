@@ -465,6 +465,21 @@ Route::group(['namespace' => 'Admin', 'prefix' => "admin", "as" => "admin."], fu
         Route::get('/get-system-health', [\App\Http\Controllers\Admin\DashboardController::class, 'getSystemHealth'])->name('getSystemHealth.api');
         Route::get('/dashboard-stats', [\App\Http\Controllers\Admin\DashboardController::class, 'getDashboardStats'])->name('getDashboardStats.api');
 
+        // Analytics Dashboard (13 comprehensive endpoints)
+        Route::get('/analytics/dashboard-summary', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getDashboardSummary'])->name('analytics.dashboardSummary.api');
+        Route::get('/analytics/user-growth', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getUserGrowth'])->name('analytics.userGrowth.api');
+        Route::get('/analytics/user-demographics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getUserDemographics'])->name('analytics.userDemographics.api');
+        Route::get('/analytics/user-retention', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getUserRetention'])->name('analytics.userRetention.api');
+        Route::get('/analytics/revenue-trends', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getRevenueTrends'])->name('analytics.revenueTrends.api');
+        Route::get('/analytics/revenue-by-plan', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getRevenueByPlan'])->name('analytics.revenueByPlan.api');
+        Route::get('/analytics/engagement-metrics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getEngagementMetrics'])->name('analytics.engagementMetrics.api');
+        Route::get('/analytics/popular-content', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getPopularContent'])->name('analytics.popularContent.api');
+        Route::get('/analytics/activity-heatmap', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getUserActivityHeatmap'])->name('analytics.activityHeatmap.api');
+        Route::get('/analytics/system-performance', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getSystemPerformance'])->name('analytics.systemPerformance.api');
+        Route::get('/analytics/api-metrics', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getApiMetrics'])->name('analytics.apiMetrics.api');
+        Route::get('/analytics/error-rates', [\App\Http\Controllers\Admin\AnalyticsController::class, 'getErrorRates'])->name('analytics.errorRates.api');
+        Route::post('/analytics/export', [\App\Http\Controllers\Admin\AnalyticsController::class, 'exportAnalytics'])->name('analytics.export.api');
+
         // FAQ Analytics (additional to existing FAQ routes)
         Route::get('/faq-analytics', [\App\Http\Controllers\Admin\AuthController::class, 'getFaqAnalytics'])->name('getFaqAnalytics.api');
 
@@ -1639,5 +1654,92 @@ Route::prefix('calendar')->middleware(['auth:api'])->group(function () {
     Route::get('/upcoming', [\App\Http\Controllers\CalendarController::class, 'upcoming'])->name('calendar.upcoming');
     Route::get('/streaks', [\App\Http\Controllers\CalendarController::class, 'streaks'])->name('calendar.streaks');
     Route::post('/sync', [\App\Http\Controllers\CalendarController::class, 'syncExternalCalendar'])->name('calendar.sync');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Coach Photo Processing Routes - AI Enhancement System
+|--------------------------------------------------------------------------
+|
+| Process real coach photos with AI enhancements:
+| - Background removal (Remove.bg API)
+| - Person removal (AI inpainting)
+| - BodyF1rst logo overlay
+| - Algorithmic art backgrounds
+| - Full composition pipeline
+|
+*/
+
+Route::prefix('coach-photos')->group(function () {
+    // Complete processing workflow
+    Route::post('/process', [\App\Http\Controllers\CoachPhotoController::class, 'processPhoto'])
+        ->name('coach-photos.process');
+
+    // Batch process multiple coaches
+    Route::post('/process-batch', [\App\Http\Controllers\CoachPhotoController::class, 'processBatch'])
+        ->name('coach-photos.processBatch');
+
+    // Upload and process in one request
+    Route::post('/upload-and-process', [\App\Http\Controllers\CoachPhotoController::class, 'uploadAndProcess'])
+        ->name('coach-photos.uploadAndProcess');
+
+    // Individual processing steps
+    Route::post('/remove-background', [\App\Http\Controllers\CoachPhotoController::class, 'removeBackground'])
+        ->name('coach-photos.removeBackground');
+
+    Route::post('/generate-background', [\App\Http\Controllers\CoachPhotoController::class, 'generateBackground'])
+        ->name('coach-photos.generateBackground');
+
+    Route::post('/add-logo', [\App\Http\Controllers\CoachPhotoController::class, 'addLogo'])
+        ->name('coach-photos.addLogo');
+
+    Route::post('/composite', [\App\Http\Controllers\CoachPhotoController::class, 'composite'])
+        ->name('coach-photos.composite');
+
+    // Utility endpoints
+    Route::get('/credits', [\App\Http\Controllers\CoachPhotoController::class, 'getCredits'])
+        ->name('coach-photos.credits');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Avatar Animation Routes
+|--------------------------------------------------------------------------
+|
+| Routes for animating coach/owner avatars using AIML API (ByteDance Models):
+| - OmniHuman 1.5: Audio-driven lip-sync animation
+| - Seedance 1.0 Pro: Text-to-video and image-to-video animation
+| - Batch processing for multiple avatars
+|
+*/
+
+Route::prefix('avatar-animation')->group(function () {
+    // Primary animation endpoint (OmniHuman 1.5)
+    Route::post('/animate', [\App\Http\Controllers\AvatarAnimationController::class, 'animateAvatar'])
+        ->name('avatar-animation.animate');
+
+    // Upload files and animate
+    Route::post('/upload-and-animate', [\App\Http\Controllers\AvatarAnimationController::class, 'uploadAndAnimate'])
+        ->name('avatar-animation.uploadAndAnimate');
+
+    // Batch animate multiple avatars
+    Route::post('/batch', [\App\Http\Controllers\AvatarAnimationController::class, 'batchAnimate'])
+        ->name('avatar-animation.batch');
+
+    // Alternative: Seedance animation (image-to-video)
+    Route::post('/seedance', [\App\Http\Controllers\AvatarAnimationController::class, 'animateWithSeedance'])
+        ->name('avatar-animation.seedance');
+
+    // Check generation status
+    Route::get('/status/{generationId}', [\App\Http\Controllers\AvatarAnimationController::class, 'getStatus'])
+        ->name('avatar-animation.status');
+
+    // Get available animation presets
+    Route::get('/presets', [\App\Http\Controllers\AvatarAnimationController::class, 'getPresets'])
+        ->name('avatar-animation.presets');
+
+    // Get API credits/usage
+    Route::get('/credits', [\App\Http\Controllers\AvatarAnimationController::class, 'getCredits'])
+        ->name('avatar-animation.credits');
 });
 
