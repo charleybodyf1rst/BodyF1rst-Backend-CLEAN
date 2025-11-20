@@ -30,7 +30,6 @@ class FileManagementController extends Controller
             'title' => 'required|string|max:255',
             'category' => 'required|string|in:reports,certificates,contracts,medical,forms,other',
             'description' => 'nullable|string|max:1000',
-            'user_id' => 'nullable|integer|exists:users,id',
             'organization_id' => 'nullable|integer|exists:organizations,id',
         ]);
 
@@ -79,7 +78,7 @@ class FileManagementController extends Controller
                 'category' => $request->category,
                 'description' => $request->description,
                 'uploaded_by' => Auth::id(),
-                'user_id' => $request->user_id,
+                'user_id' => Auth::id(),
                 'organization_id' => $request->organization_id,
             ]);
 

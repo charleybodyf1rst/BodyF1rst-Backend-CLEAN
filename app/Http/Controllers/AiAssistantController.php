@@ -615,7 +615,6 @@ class AiAssistantController extends Controller
             'workout_type' => 'required|string',
             'datetime' => 'required|date',
             'duration' => 'required|integer|min:5|max:300',
-            'user_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -666,7 +665,6 @@ class AiAssistantController extends Controller
             'meal_type' => 'required|in:breakfast,lunch,dinner,snack',
             'datetime' => 'required|date',
             'calories' => 'nullable|integer',
-            'user_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -717,7 +715,6 @@ class AiAssistantController extends Controller
             'task_name' => 'required|string',
             'datetime' => 'required|date',
             'priority' => 'nullable|in:low,medium,high',
-            'user_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {
@@ -848,7 +845,6 @@ class AiAssistantController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'calendar_token' => 'required|string',
-            'user_id' => 'nullable|integer',
         ]);
 
         if ($validator->fails()) {

@@ -15,7 +15,6 @@ class SpecializedWorkoutController extends Controller
     public function createAMRAP(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'amrap_type' => 'required|in:rounds,reps',
             'time_cap_minutes' => 'required|integer|min:1',
@@ -27,7 +26,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $amrapId = DB::table('amrap_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -99,7 +98,6 @@ class SpecializedWorkoutController extends Controller
     public function createEMOM(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'total_minutes' => 'required|integer|min:1',
             'exercises' => 'required|json',
@@ -110,7 +108,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $emomId = DB::table('emom_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -171,7 +169,6 @@ class SpecializedWorkoutController extends Controller
     public function createRFT(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'prescribed_rounds' => 'required|integer|min:1',
             'exercises' => 'required|json',
@@ -182,7 +179,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $rftId = DB::table('rft_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -247,7 +244,6 @@ class SpecializedWorkoutController extends Controller
     public function createTabata(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'exercises' => 'required|json',
         ]);
@@ -257,7 +253,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $tabataId = DB::table('tabata_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -320,7 +316,6 @@ class SpecializedWorkoutController extends Controller
     public function createHIIT(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'work_seconds' => 'required|integer|min:1',
             'rest_seconds' => 'required|integer|min:0',
@@ -332,7 +327,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $hiitId = DB::table('hiit_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -399,7 +394,6 @@ class SpecializedWorkoutController extends Controller
     public function createCircuit(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'total_stations' => 'required|integer|min:1',
             'stations' => 'required|json',
@@ -410,7 +404,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $circuitId = DB::table('circuit_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -473,7 +467,6 @@ class SpecializedWorkoutController extends Controller
     public function createSuperset(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'total_supersets' => 'required|integer|min:1',
             'supersets' => 'required|json',
@@ -484,7 +477,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $supersetId = DB::table('superset_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -547,7 +540,6 @@ class SpecializedWorkoutController extends Controller
     public function createPyramid(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'pyramid_type' => 'required|in:ascending,descending,triangle',
             'progression_method' => 'required|in:weight,reps,both',
@@ -559,7 +551,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $pyramidId = DB::table('pyramid_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -628,7 +620,6 @@ class SpecializedWorkoutController extends Controller
     public function createChipper(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'total_exercises' => 'required|integer|min:1',
             'total_reps_prescribed' => 'required|integer|min:1',
@@ -640,7 +631,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $chipperId = DB::table('chipper_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
@@ -708,7 +699,6 @@ class SpecializedWorkoutController extends Controller
     public function createDropSet(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
             'workout_name' => 'required|string|max:255',
             'exercise_name' => 'required|string|max:255',
             'total_drop_sets' => 'required|integer|min:1',
@@ -720,7 +710,7 @@ class SpecializedWorkoutController extends Controller
         }
 
         $dropSetId = DB::table('drop_set_workouts')->insertGetId([
-            'user_id' => $request->user_id,
+            'user_id' => Auth::id(),
             'workout_log_id' => $request->workout_log_id,
             'workout_name' => $request->workout_name,
             'description' => $request->description,
